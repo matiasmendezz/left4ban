@@ -374,7 +374,8 @@ class BanChecker:
                 
                 # Anti-detection
                 co.set_argument('--disable-blink-features=AutomationControlled')
-                co.set_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                # MATCH OS: Use Linux UA for Docker (Render is Linux)
+                co.set_user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 
                 print("[*] Chromium path set to /usr/bin/chromium")
             else:
@@ -393,14 +394,36 @@ class BanChecker:
             page.get(target_url)
             
             import time
+            import random
             
             # Wait for Cloudflare on initial load
-            # Wait for Cloudflare on initial load
             print(f"[*] Loading page: {target_url} ...")
-            for i in range(20):
+            for i in range(25):
                 title = page.title.lower() if page.title else "no-title"
                 print(f"[DEBUG] Check {i}: Title='{title}'")
                 
+                # Human simulation: Random mouse moves
+                try: 
+                    page.actions.move(random.randint(100, 500), random.randint(100, 500), duration=0.2)
+                except: 
+                    pass
+                
+                # Try to find specific Cloudflare iframe/checkbox if implied
+                try:
+                    # Generic attempt to click any visible checkbox in probable turnstile frames
+                    if "just a moment" in title:
+                        frames = page.eles("tag:iframe")
+                        for f in frames:
+                             try:
+                                 # blind click in center of iframe
+                                 box = f.rect
+                                 if box:
+                                     cx = box.location[0] + box.size[0]/2
+                                     cy = box.location[1] + box.size[1]/2
+                                     page.actions.move(cx, cy).click()
+                             except: pass
+                except: pass
+
                 if "just a moment" not in title and "cloudflare" not in title and "checking" not in title:
                      # Check for search box presence
                      if page.ele("css:input[name='search']") or page.ele("css:input[type='text']"):

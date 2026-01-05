@@ -1,5 +1,5 @@
-# Base Image: Python 3.11 Slim (Debian based)
-FROM python:3.11-slim
+# Base Image: Python 3.11 Slim (Debian Bookworm - Stable)
+FROM python:3.11-slim-bookworm
 
 # Environment Variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y \
     chromium \
     chromium-driver \
     libnss3 \
-    libgconf-2-4 \
     && rm -rf /var/lib/apt/lists/*
 
 # Work Directory

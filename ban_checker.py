@@ -361,8 +361,9 @@ class BanChecker:
             is_headless = os.getenv("HEADLESS", "false").lower() == "true"
             
             if is_headless:
-                print("[*] Running in HEADLESS mode (Docker/Server)...")
-                co.headless(True)
+                print("[*] Running in DOCKER mode with XVFB (Virtual Screen)...")
+                # Important: valid HEADED mode to bypass Cloudflare
+                co.headless(False) 
                 co.set_argument('--no-sandbox')
                 co.set_argument('--disable-gpu')
                 co.set_argument('--disable-dev-shm-usage')

@@ -370,6 +370,11 @@ class BanChecker:
                 # Explicitly set chromium path for Debian/Docker
                 # In python:3.11-slim-bookworm + apt install chromium, it is usually here:
                 co.set_browser_path('/usr/bin/chromium')
+                
+                # Anti-detection
+                co.set_argument('--disable-blink-features=AutomationControlled')
+                co.set_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                
                 print("[*] Chromium path set to /usr/bin/chromium")
             else:
                 co.headless(False)

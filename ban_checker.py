@@ -430,6 +430,16 @@ class BanChecker:
                          print("[DEBUG] Search box found! Cloudflare passed.")
                          break
                 time.sleep(1)
+            else:
+                 # Loop finished without break -> Timeout
+                 print("[!] Timeout waiting for Cloudflare.")
+                 if page: page.quit()
+                 return {
+                    "source": "L4D2Center",
+                    "status": "Protected (Cloudflare)",
+                    "history": ["No se pudo verificar automáticamente (Captcha). Revisa el link manual."],
+                    "manual_check_url": search_link
+                 }
             
             # 2. Interact
             try:

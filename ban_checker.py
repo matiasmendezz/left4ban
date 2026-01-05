@@ -512,6 +512,7 @@ class BanChecker:
             return {"source": "L4D2Center", "status": "Clean", "history": []}
 
         except Exception as e:
+            print(f"[ERROR] L4D2Center Failed: {e}")
             if page: 
                 try: page.quit()
                 except: pass

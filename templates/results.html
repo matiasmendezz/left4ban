@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resultados | Left 4 Bann</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;600&family=Roboto+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="container results-screen">
+        <header class="main-header"
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; border-bottom: 2px solid #333; padding-bottom: 20px;">
+            <h1 style="font-family: 'Teko', sans-serif; font-size: 4rem; color: #d32f2f; margin: 0; line-height: 1;">
+                RESULTADOS</h1>
+            <a href="/" class="btn-scan"
+                style="margin: 0; padding: 10px 30px; font-size: 1.2rem; width: auto; background-color: #d32f2f; border: 1px solid #ff4444; box-shadow: 0 0 10px rgba(211, 47, 47, 0.5);">
+                &larr; NUEVA BÚSQUEDA
+            </a>
+        </header>
+
+        <section class="players-container">
+            {% for player in data %}
+            <div class="player-section {% if loop.index > 1 %}smurf-account{% endif %}">
+                <header class="player-header">
+                    <div class="header-info">
+                        {% if loop.index > 1 %}
+                        <div class="smurf-badge">SMURF DETECTADO</div>
+                        {% endif %}
+
+                        <!-- Avatar Display -->
+                        <div class="player-identity" style="display: flex; align-items: center; gap: 15px;">
+                            {% if player.avatar %}
+                            <img src="{{ player.avatar }}" alt="Avatar"
+                                style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid #fff;">
+                            {% endif %}
+
+                            <div>
+                                <h2 style="margin: 0; line-height: 1.2;">
+                                    {% if player.player_name and player.player_name != 'Unknown' %}
+                                    <span class="player-name">{{ player.player_name }}</span>
+                                    {% endif %}
+                                </h2>
+                                <span
+                                    style="color: rgba(255,255,255,0.6); font-family: 'Roboto Mono', monospace; font-size: 0.9em;">
+                                    ID: <span class="highlight">{{ player.steam_id }}</span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <a href="{{ player.profile_url }}" target="_blank" class="steam-link">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" alt="Steam"
+                            width="20"> Ver Perfil
+                    </a>
+                </header>
+
+                <div class="summary-grid">
+                    {% for item in player.results %}
+                    <div
+                        class="card {% if item.status|lower == 'clean' or item.status|lower == 'clean (api checked)' %}clean{% else %}banned{% endif %}">
+                        <h3>{{ item.source }}</h3>
+                        <div class="status-badge">{{ item.status }}</div>
+                        <p class="details">
+                            {% if item.details %}
+                            {{ item.details }}
+                            {% elif item.history %}
+                            {{ item.history|length }} registros
+                            {% else %}
+                            Sin incidentes
+                            {% endif %}
+                        </p>
+
+                        {% if item.history %}
+                        <div class="history-log">
+                            <h4>Historial de Infracciones</h4>
+                            <ul>
+                                {% for record in item.history %}
+                                <li>{{ record }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+
+                        {% if item.manual_check_url %}
+                        <div class="manual-check-container">
+                            <a href="{{ item.manual_check_url }}" target="_blank" class="btn-manual">VERIFICAR
+                                MANUALMENTE
+                                &nearr;</a>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% if not loop.last %}
+            <hr class="player-separator">
+            {% endif %}
+            {% endfor %}
+        </section>
+    </div>
+</body>
+
+</html>

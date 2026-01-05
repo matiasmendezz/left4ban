@@ -1,0 +1,6 @@
+beautifulsoup4
+tabulate
+lxml
+flask
+cloudscraper
+gunicorn

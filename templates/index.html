@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Left 4 Bann | L4D2 Ban Checker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;600&family=Roboto+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="container main-screen">
+        <h1 class="glitch-text" data-text="LEFT 4 BAN">LEFT 4 BAN</h1>
+        <p class="subtitle">Multi-Source Ban Checker</p>
+
+        <!-- Main Search Form -->
+        <div class="search-box" id="search-container">
+            <form id="u-form">
+                <input type="text" id="steam-input" name="steam_input"
+                    placeholder="Pegue URL de Steam o ID (Ej: 7656...)" required autocomplete="off">
+                <button type="submit" class="btn-scan">ESCANEAR INFECCIÓN</button>
+            </form>
+        </div>
+
+        <!-- Progress View (Hidden by default) -->
+        <div class="progress-view" id="progress-view"
+            style="display: none; text-align: center; background: rgba(0,0,0,0.8); padding: 30px; border: 1px solid #ff4444; border-radius: 8px;">
+
+            <!-- Dynamic Profile Info -->
+            <div id="profile-info" style="margin-bottom: 20px; display: none;">
+                <img id="profile-avatar" src="" alt="Avatar"
+                    style="width: 80px; height: 80px; border-radius: 50%; border: 2px solid #fff; margin-bottom: 10px;">
+                <h2 id="profile-name"
+                    style="margin: 0; color: #fff; font-family: 'Teko', sans-serif; font-size: 2em; letter-spacing: 2px;">
+                </h2>
+                <p style="color: #bbb; margin: 5px 0;">Analizando historial de bans...</p>
+            </div>
+
+            <h3 id="status-text" style="color: #ff4444; margin-top: 0; display: block;">INICIANDO ESCANEO...</h3>
+
+            <ul id="progress-list"
+                style="list-style: none; padding: 0; text-align: left; max-width: 400px; margin: 0 auto; border-top: 1px solid #444; padding-top: 20px;">
+                <!-- Items added by JS -->
+            </ul>
+        </div>
+
+        {% if error %}
+        <div class="error-msg">
+            ⚠️ {{ error }}
+        </div>
+        {% endif %}
+
+        <div class="sources-list">
+            <span>Fuentes:</span>
+            <ul>
+                <li>Steam Official (VAC)</li>
+                <li>SirPlease.gg</li>
+                <li>L4D2Center</li>
+                <li>Lalohlz</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('u-form');
+        const searchContainer = document.getElementById('search-container');
+        const progressView = document.getElementById('progress-view');
+        const progressList = document.getElementById('progress-list');
+        const statusText = document.getElementById('status-text');
+
+        // Profile Elements
+        const profileInfo = document.getElementById('profile-info');
+        const profileName = document.getElementById('profile-name');
+        const profileAvatar = document.getElementById('profile-avatar');
+
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const inputVal = document.getElementById('steam-input').value.trim();
+
+            if (!inputVal) return;
+
+            // UI Switch
+            searchContainer.style.display = 'none';
+            progressView.style.display = 'block';
+            progressList.innerHTML = '';
+            statusText.innerText = "CONECTANDO CON LA BASE DE DATOS...";
+            profileInfo.style.display = 'none';
+
+            // Start Stream
+            // Encode input to be safe for URL
+            const evtSource = new EventSource("/stream_check/" + encodeURIComponent(inputVal));
+
+            evtSource.onmessage = function (e) {
+                const data = JSON.parse(e.data);
+
+                if (data.type === 'info') {
+                    // Show Profile Data
+                    if (data.name) {
+                        profileName.innerText = data.name;
+                        if (data.avatar) profileAvatar.src = data.avatar;
+                        else profileAvatar.style.display = 'none';
+
+                        profileInfo.style.display = 'block';
+                        statusText.innerText = "BUSCANDO INFECCIONES...";
+                    }
+                } else if (data.type === 'progress') {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span class="check-icon" style="color: yellow;">➜</span> ${data.msg}`;
+                    progressList.appendChild(li);
+                } else if (data.type === 'success') {
+                    const li = document.createElement('li');
+                    li.style.color = '#44ff44';
+                    li.innerHTML = `<span class="check-icon">✔</span> ${data.msg}`;
+                    progressList.appendChild(li);
+                } else if (data.type === 'error') {
+                    const li = document.createElement('li');
+                    li.style.color = 'red';
+                    li.innerHTML = `❌ ${data.msg}`;
+                    progressList.appendChild(li);
+                    evtSource.close();
+                } else if (data.type === 'redirect') {
+                    console.log("Redirect received:", data.url);
+                    const li = document.createElement('li');
+                    li.style.color = '#ffff00';
+                    li.innerHTML = `🚀 REDIRIGIENDO A RESULTADOS...`;
+                    progressList.appendChild(li);
+
+                    window.location.href = data.url;
+                    evtSource.close();
+                }
+            };
+
+            evtSource.onerror = function (e) {
+                console.error("Stream Error", e);
+                // Optionally show error if not closed manually
+                evtSource.close();
+            };
+        });
+    </script>
+</body>
+
+</html>

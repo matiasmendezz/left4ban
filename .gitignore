@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.env
+
+# Build Artifacts (PyInstaller)
+build/
+dist/
+*.spec
+
+# System
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Node (unexpected but present)
+node_modules/

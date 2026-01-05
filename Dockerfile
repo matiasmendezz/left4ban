@@ -27,4 +27,4 @@ COPY . .
 EXPOSE 10000
 
 # Run with Gunicorn
-CMD gunicorn app:app --bind 0.0.0.0:$PORT
+CMD gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120

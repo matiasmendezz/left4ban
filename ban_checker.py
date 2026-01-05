@@ -366,8 +366,11 @@ class BanChecker:
                 co.set_argument('--no-sandbox')
                 co.set_argument('--disable-gpu')
                 co.set_argument('--disable-dev-shm-usage')
-                # Point to system chromium usually in /usr/bin/chromium or similar
-                # DrissionPage usually finds it if installed, or we can set path if needed
+                
+                # Explicitly set chromium path for Debian/Docker
+                # In python:3.11-slim-bookworm + apt install chromium, it is usually here:
+                co.set_browser_path('/usr/bin/chromium')
+                print("[*] Chromium path set to /usr/bin/chromium")
             else:
                 co.headless(False)
                 co.set_argument('--window-position=-10000,0') 
@@ -386,11 +389,16 @@ class BanChecker:
             import time
             
             # Wait for Cloudflare on initial load
+            # Wait for Cloudflare on initial load
+            print(f"[*] Loading page: {target_url} ...")
             for i in range(20):
-                title = page.title.lower() if page.title else ""
+                title = page.title.lower() if page.title else "no-title"
+                print(f"[DEBUG] Check {i}: Title='{title}'")
+                
                 if "just a moment" not in title and "cloudflare" not in title and "checking" not in title:
                      # Check for search box presence
                      if page.ele("css:input[name='search']") or page.ele("css:input[type='text']"):
+                         print("[DEBUG] Search box found! Cloudflare passed.")
                          break
                 time.sleep(1)
             

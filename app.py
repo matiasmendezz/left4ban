@@ -98,11 +98,24 @@ def show_result(result_id):
     return render_template('results.html', data=data)
 
 if __name__ == '__main__':
+    import os
+    import socket
     import webbrowser
     from threading import Timer
 
+    port = int(os.getenv("PORT", 5000))
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("127.0.0.1", port)) != 0:
+                break
+            port += 1
+
     def open_browser():
-        webbrowser.open_new("http://127.0.0.1:5000")
+        try:
+            webbrowser.open_new(f"http://127.0.0.1:{port}")
+        except Exception:
+            pass
 
     Timer(1.5, open_browser).start()
-    app.run(debug=False, port=5000)
+    app.run(debug=False, port=port)
+

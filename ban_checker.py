@@ -71,27 +71,38 @@ class BanChecker:
         co = ChromiumOptions()
         co.auto_port()
 
-        force_headed = os.getenv("FORCE_HEADED", "false").lower() == "true"
-        if not force_headed:
-            co.set_argument('--headless=new')
-
+        # Cloudflare Turnstile blocks headless mode or mismatched User-Agent strings.
+        # Keep real browser fingerprint and start minimized off-screen so it never bothers the user.
+        co.headless(False)
         co.set_argument('--disable-blink-features=AutomationControlled')
         co.set_argument('--no-sandbox')
         co.set_argument('--disable-gpu')
         co.set_argument('--disable-dev-shm-usage')
+        co.set_argument('--no-first-run')
+        co.set_argument('--no-default-browser-check')
         co.set_argument('--mute-audio')
         co.set_argument('--window-size=1920,1080')
         co.set_argument('--window-position=-32000,-32000')
         co.set_argument('--start-minimized')
 
-        for candidate_path in ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable']:
+        for candidate_path in [
+            '/usr/bin/brave-browser',
+            '/usr/bin/brave',
+            '/opt/brave.com/brave/brave',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+        ]:
             if os.path.exists(candidate_path):
                 co.set_browser_path(candidate_path)
                 break
 
-        co.set_user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-
         self._browser_page = ChromiumPage(co)
+        try:
+            self._browser_page.set.window.mini()
+        except Exception:
+            pass
         return self._browser_page
 
     def close_browser(self):
@@ -529,33 +540,25 @@ class BanChecker:
             # Wait for Cloudflare on initial load if needed
             print(f"[*] Loading page: {target_url} ...")
             for i in range(25):
-                title = page.title.lower() if page.title else "no-title"
+                title = (page.title or "").lower()
                 print(f"[DEBUG] Check {i}: Title='{title}'")
 
-                try:
-                    page.actions.move(random.randint(100, 500), random.randint(100, 500), duration=0.2)
-                except Exception:
-                    pass
-
-                try:
-                    if "just a moment" in title:
-                        frames = page.eles("tag:iframe")
-                        for f in frames:
-                            try:
-                                box = f.rect
-                                if box:
-                                    cx = box.location[0] + box.size[0] / 2
-                                    cy = box.location[1] + box.size[1] / 2
-                                    page.actions.move(cx, cy).click()
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-
-                if "just a moment" not in title and "cloudflare" not in title and "checking" not in title:
-                    if page.ele("css:input[name='search']") or page.ele("css:input[type='text']"):
+                if "just a moment" not in title and "cloudflare" not in title and "checking" not in title and title != "":
+                    if page.ele("css:#searchfield", timeout=1) or page.ele("css:input[type='text']", timeout=1):
                         print("[DEBUG] Search box found! Cloudflare passed.")
                         break
+                else:
+                    try:
+                        turnstile_input = page.ele("css:input[name='cf-turnstile-response']", timeout=1)
+                        if turnstile_input:
+                            parent = turnstile_input.parent()
+                            box = parent.rect if parent else None
+                            if box:
+                                cx = box.location[0] + 30
+                                cy = box.location[1] + box.size[1] / 2
+                                page.actions.move_to((cx, cy)).click()
+                    except Exception:
+                        pass
                 time.sleep(1)
             else:
                 print("[!] Timeout waiting for Cloudflare.")
@@ -567,23 +570,45 @@ class BanChecker:
                     "related_ids": []
                 }
 
-            # Interact with search box
+            # Wait briefly for initial table to populate before searching
+            for _ in range(10):
+                if len(page.eles("css:#banstable tr")) > 1:
+                    break
+                time.sleep(0.4)
+
+            # Interact with #searchfield and ButtonSearchBans()
             try:
-                search_box = page.ele("css:input[placeholder*='Search']") or page.ele("css:input[name='search']")
+                search_box = page.ele("css:#searchfield", timeout=2) or page.ele("css:input[type='text']", timeout=2)
+                search_btn = page.ele("css:button[onclick*='ButtonSearchBans']", timeout=2)
                 if search_box:
-                    print("[*] L4D2Center: Typing SteamID manually...")
+                    print("[*] L4D2Center: Searching via #searchfield + ButtonSearchBans()...")
+                    prev_curpage = ""
+                    try:
+                        cp_el = page.ele("css:#curpage", timeout=1)
+                        if cp_el:
+                            prev_curpage = cp_el.text
+                    except Exception:
+                        pass
+
                     search_box.clear()
                     search_box.input(steam_id)
-                    page.actions.send_keys('')  # Press Enter
+                    if search_btn:
+                        search_btn.click()
+                    else:
+                        page.run_js("if (typeof ButtonSearchBans === 'function') ButtonSearchBans();")
 
-                    time.sleep(1)
-                    for k in range(10):
-                        html_now = page.html.lower()
-                        if (steam_id in html_now or steam2_id.lower() in html_now or steam_suffix in html_now) and ("reason" in html_now or "expira" in html_now or "permanent" in html_now):
+                    for k in range(16):
+                        time.sleep(0.5)
+                        html_now = page.html
+                        if (steam_id in html_now) or (steam2_id in html_now):
                             break
-                        if "no bans found" in html_now or "0 bans" in html_now:
-                            break
-                        time.sleep(1)
+                        try:
+                            cp_el = page.ele("css:#curpage", timeout=0.5)
+                            cur_cp = cp_el.text if cp_el else ""
+                            if cur_cp and cur_cp != prev_curpage and ("/0" in cur_cp or "/1" in cur_cp):
+                                break
+                        except Exception:
+                            pass
                 else:
                     print("[!] Search box not found, trying fallback URL navigate...")
                     page.get(search_link)
@@ -619,24 +644,29 @@ class BanChecker:
                 if not cols:
                     continue
 
-                row_text = row.get_text()
+                row_text = row.get_text(" ", strip=True)
                 match_id = (steam_id in row_text) or (steam2_id in row_text) or (steam_suffix in row_text)
                 if match_id:
                     try:
                         if len(cols) > 0:
                             found_nickname = cols[0].get_text(strip=True)
 
+                        banned_on = cols[2].get_text(strip=True) if len(cols) > 2 else ""
                         unban_str = cols[3].get_text(strip=True) if len(cols) > 3 else ""
-                        reason = cols[4].get_text(strip=True) if len(cols) > 4 else "Unknown"
+                        reason = cols[4].get_text(strip=True) if len(cols) > 4 else ""
                         desc = cols[5].get_text(strip=True) if len(cols) > 5 else ""
 
-                        ban_info = f"Reason: {reason}"
+                        parts = []
+                        if banned_on:
+                            parts.append(f"[{banned_on}]")
+                        if reason:
+                            parts.append(f"Reason: {reason}")
                         if desc:
-                            ban_info += f" | Desc: {desc}"
+                            parts.append(f"Desc: {desc}")
                         if unban_str:
-                            ban_info += f" | Expira: {unban_str}"
+                            parts.append(f"Unban: {unban_str}")
 
-                        history.append(ban_info)
+                        history.append(" | ".join(parts) if parts else row_text)
                     except Exception:
                         history.append(row_text)
 
@@ -948,9 +978,13 @@ class BanChecker:
                     if res.get("status") in ["Found Records", "Banned", "BANNED"]:
                         msg_found = f"⚠️ {s_name}: FOUND!" if is_en else f"⚠️ {s_name}: ¡ENCONTRADO!"
                         yield {"type": "progress", "msg": msg_found}
-                    else:
+                    elif res.get("status") == "Clean":
                         msg_clean = f"{s_name}: Clean" if is_en else f"{s_name}: Limpio"
                         yield {"type": "success", "msg": msg_clean}
+                    else:
+                        err_detail = res.get("error") or res.get("status") or "Error"
+                        msg_err = f"⚠️ {s_name}: {err_detail}"
+                        yield {"type": "progress", "msg": msg_err}
 
                     bans_found.append(res)
 

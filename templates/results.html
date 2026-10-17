@@ -11,12 +11,18 @@
 </head>
 
 <body>
+    <div class="lang-switcher">
+        <button type="button" class="lang-btn" data-lang="es">ES</button>
+        <button type="button" class="lang-btn" data-lang="en">EN</button>
+    </div>
+
     <div class="container results-screen">
         <header class="main-header"
             style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; border-bottom: 2px solid #333; padding-bottom: 20px;">
-            <h1 style="font-family: 'Teko', sans-serif; font-size: 4rem; color: #d32f2f; margin: 0; line-height: 1;">
+            <h1 data-i18n="results_title"
+                style="font-family: 'Teko', sans-serif; font-size: 4rem; color: #d32f2f; margin: 0; line-height: 1;">
                 RESULTADOS</h1>
-            <a href="/" class="btn-scan"
+            <a href="/" id="btn-new-search" class="btn-scan" data-i18n="new_search"
                 style="margin: 0; padding: 10px 30px; font-size: 1.2rem; width: auto; background-color: #d32f2f; border: 1px solid #ff4444; box-shadow: 0 0 10px rgba(211, 47, 47, 0.5);">
                 &larr; NUEVA BÚSQUEDA
             </a>
@@ -28,7 +34,7 @@
                 <header class="player-header">
                     <div class="header-info">
                         {% if player.is_smurf %}
-                        <div class="smurf-badge">
+                        <div class="smurf-badge" data-i18n-smurf data-smurf-of="{{ player.smurf_of_name or player.smurf_of or '' }}">
                             SMURF DETECTADO{% if player.smurf_of_name or player.smurf_of %} (Cuenta vinculada a: {{ player.smurf_of_name or player.smurf_of }}){% endif %}
                         </div>
                         {% endif %}
@@ -55,7 +61,7 @@
                     </div>
                     <a href="{{ player.profile_url }}" target="_blank" class="steam-link">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" alt="Steam"
-                            width="20"> Ver Perfil
+                            width="20"> <span data-i18n="view_profile">Ver Perfil</span>
                     </a>
                 </header>
 
@@ -64,8 +70,10 @@
                     <div
                         class="card {% if item.status|lower == 'clean' or item.status|lower == 'clean (api checked)' %}clean{% else %}banned{% endif %}">
                         <h3>{{ item.source }}</h3>
-                        <div class="status-badge">{{ item.status }}</div>
-                        <p class="details">
+                        <div class="status-badge" data-i18n-status data-original-status="{{ item.status }}">{{ item.status }}</div>
+                        <p class="details" data-i18n-details
+                           data-details="{% if item.details %}{{ item.details }}{% endif %}"
+                           data-count="{% if not item.details and item.history %}{{ item.history|length }}{% else %}0{% endif %}">
                             {% if item.details %}
                             {{ item.details }}
                             {% elif item.history %}
@@ -77,7 +85,7 @@
 
                         {% if item.history %}
                         <div class="history-log">
-                            <h4>Historial de Infracciones</h4>
+                            <h4 data-i18n="infraction_history">Historial de Infracciones</h4>
                             <ul>
                                 {% for record in item.history %}
                                 <li>{{ record }}</li>
@@ -88,9 +96,7 @@
 
                         {% if item.manual_check_url %}
                         <div class="manual-check-container">
-                            <a href="{{ item.manual_check_url }}" target="_blank" class="btn-manual">VERIFICAR
-                                MANUALMENTE
-                                &nearr;</a>
+                            <a href="{{ item.manual_check_url }}" target="_blank" class="btn-manual" data-i18n="manual_check">VERIFICAR MANUALMENTE &nearr;</a>
                         </div>
                         {% endif %}
                     </div>
@@ -103,6 +109,126 @@
             {% endfor %}
         </section>
     </div>
+
+    <script>
+        const I18N = {
+            es: {
+                results_title: "RESULTADOS",
+                new_search: "← NUEVA BÚSQUEDA",
+                smurf_badge: "SMURF DETECTADO",
+                linked_to: "Cuenta vinculada a:",
+                view_profile: "Ver Perfil",
+                infraction_history: "Historial de Infracciones",
+                no_incidents: "Sin incidentes",
+                records: "registros",
+                manual_check: "VERIFICAR MANUALMENTE &nearr;",
+                status_clean: "LIMPIO",
+                status_records: "CON REGISTROS",
+                status_banned: "BANEADO"
+            },
+            en: {
+                results_title: "RESULTS",
+                new_search: "← NEW SEARCH",
+                smurf_badge: "SMURF DETECTED",
+                linked_to: "Linked to account:",
+                view_profile: "View Profile",
+                infraction_history: "Infraction History",
+                no_incidents: "No incidents",
+                records: "records",
+                manual_check: "CHECK MANUALLY &nearr;",
+                status_clean: "CLEAN",
+                status_records: "RECORDS FOUND",
+                status_banned: "BANNED"
+            }
+        };
+
+        function formatStatus(status, lang) {
+            if (!status) return '';
+            const s = status.toLowerCase();
+            if (s.includes('clean')) {
+                return I18N[lang].status_clean;
+            }
+            if (s.includes('bann')) {
+                return I18N[lang].status_banned;
+            }
+            if (s.includes('record') || s.includes('found')) {
+                return I18N[lang].status_records;
+            }
+            return status;
+        }
+
+        function setLanguage(lang) {
+            if (!I18N[lang]) lang = 'es';
+            localStorage.setItem('l4b_lang', lang);
+            document.documentElement.lang = lang;
+
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-lang') === lang);
+            });
+
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (I18N[lang] && I18N[lang][key]) {
+                    el.innerHTML = I18N[lang][key];
+                }
+            });
+
+            document.querySelectorAll('[data-i18n-status]').forEach(el => {
+                const orig = el.getAttribute('data-original-status');
+                el.innerText = formatStatus(orig, lang);
+            });
+
+            document.querySelectorAll('[data-i18n-details]').forEach(el => {
+                const details = el.getAttribute('data-details');
+                const count = parseInt(el.getAttribute('data-count') || '0', 10);
+                if (details) {
+                    el.innerText = details;
+                } else if (count > 0) {
+                    el.innerText = `${count} ${I18N[lang].records}`;
+                } else {
+                    el.innerText = I18N[lang].no_incidents;
+                }
+            });
+
+            document.querySelectorAll('[data-i18n-smurf]').forEach(el => {
+                const linked = el.getAttribute('data-smurf-of');
+                if (linked) {
+                    el.innerText = `${I18N[lang].smurf_badge} (${I18N[lang].linked_to} ${linked})`;
+                } else {
+                    el.innerText = I18N[lang].smurf_badge;
+                }
+            });
+
+            const newSearchBtn = document.getElementById('btn-new-search');
+            if (newSearchBtn) {
+                newSearchBtn.href = '/?lang=' + lang;
+            }
+
+            try {
+                const url = new URL(window.location);
+                url.searchParams.set('lang', lang);
+                window.history.replaceState({}, '', url);
+            } catch (e) {}
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const paramLang = params.get('lang');
+            let initialLang = 'es';
+            if (paramLang && (paramLang === 'es' || paramLang === 'en')) {
+                initialLang = paramLang;
+            } else {
+                initialLang = localStorage.getItem('l4b_lang') || 'es';
+            }
+            setLanguage(initialLang);
+
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    setLanguage(btn.getAttribute('data-lang'));
+                });
+            });
+        });
+    </script>
 </body>
 
 </html>

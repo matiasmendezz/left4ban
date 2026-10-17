@@ -33,14 +33,16 @@ def start_check():
 def stream_check(steam_input):
     if steam_input in JOBS_CACHE:
         actual_input = JOBS_CACHE[steam_input]["steam_input"]
+        lang = JOBS_CACHE[steam_input].get("lang", "es")
     else:
         actual_input = steam_input
+        lang = request.args.get("lang", "es")
 
     def generate():
         # Yield padding to force browser buffer flush
         yield ":" + (" " * 2048) + "\n\n"
         
-        gen = checker.get_all_bans_generator(actual_input)
+        gen = checker.get_all_bans_generator(actual_input, lang=lang)
         final_result = None
         
         try:
@@ -55,14 +57,14 @@ def stream_check(steam_input):
                     
                     complete_payload = {
                         'type': 'complete',
-                        'url': url_for('show_result', result_id=res_id),
+                        'url': url_for('show_result', result_id=res_id) + f"?lang={lang}",
                         'result_id': res_id
                     }
                     yield f"data: {json.dumps(complete_payload)}\n\n"
                     
                     redirect_payload = {
                         'type': 'redirect',
-                        'url': url_for('show_result', result_id=res_id),
+                        'url': url_for('show_result', result_id=res_id) + f"?lang={lang}",
                         'result_id': res_id
                     }
                     yield f"data: {json.dumps(redirect_payload)}\n\n"
@@ -73,11 +75,13 @@ def stream_check(steam_input):
             print(f"[ERROR] Stream Exception: {e}")
             import traceback
             traceback.print_exc()
-            yield f"data: {json.dumps({'type': 'error', 'msg': f'Error interno: {str(e)}'})}\n\n"
+            err_msg = f"Internal error: {str(e)}" if lang == "en" else f"Error interno: {str(e)}"
+            yield f"data: {json.dumps({'type': 'error', 'msg': err_msg})}\n\n"
             
         # Fallback if generator finishes without 'complete' (Should not happen usually)
         if not final_result:
-            yield f"data: {json.dumps({'type': 'error', 'msg': 'El escaneo terminó sin resultados.'})}\n\n"
+            no_res_msg = "Scan finished without results." if lang == "en" else "El escaneo terminó sin resultados."
+            yield f"data: {json.dumps({'type': 'error', 'msg': no_res_msg})}\n\n"
 
     headers = {
         'Cache-Control': 'no-cache',

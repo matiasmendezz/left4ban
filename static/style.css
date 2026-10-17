@@ -34,6 +34,41 @@ body {
     text-align: center;
 }
 
+/* Language Switcher */
+.lang-switcher {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    gap: 6px;
+    z-index: 1000;
+}
+
+.lang-btn {
+    background: #1e1e1e;
+    color: #888;
+    border: 1px solid #444;
+    padding: 6px 14px;
+    font-family: var(--font-mono);
+    font-weight: bold;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.lang-btn:hover {
+    color: #fff;
+    border-color: #777;
+}
+
+.lang-btn.active {
+    background: var(--accent-red);
+    color: #fff;
+    border-color: #ff4444;
+    box-shadow: 0 0 8px rgba(211, 47, 47, 0.4);
+}
+
 /* Home Screen */
 .main-screen h1 {
     font-family: var(--font-head);

@@ -870,19 +870,23 @@ class BanChecker:
             print(f"[!] Error gathering steam details: {e}")
         return None
 
-    def get_all_bans_generator(self, start_input):
+    def get_all_bans_generator(self, start_input, lang="es"):
         """
         Generator for SSE progress updates.
         Yields: {"type": "progress"|"complete"|"error"|"info"|"player_result", "msg": "...", "result": data, "player": player_data}
         """
-        yield {"type": "progress", "msg": "Analizando entrada y resolviendo Steam IDs..."}
+        is_en = (lang == "en")
+        msg_resolving = "Analyzing input for Steam IDs..." if is_en else "Analizando entrada y resolviendo Steam IDs..."
+        yield {"type": "progress", "msg": msg_resolving}
 
         initial_ids = self.parse_multiple_steam_inputs(start_input)
         if not initial_ids:
-            yield {"type": "error", "msg": "No se pudo identificar ningún Steam ID válido en el texto ingresado."}
+            msg_error = "Could not identify any valid Steam ID in the input." if is_en else "No se pudo identificar ningún Steam ID válido en el texto ingresado."
+            yield {"type": "error", "msg": msg_error}
             return
 
-        yield {"type": "progress", "msg": f"Jugadores detectados en cola inicial: {len(initial_ids)}"}
+        msg_queue = f"Players detected in initial queue: {len(initial_ids)}" if is_en else f"Jugadores detectados en cola inicial: {len(initial_ids)}"
+        yield {"type": "progress", "msg": msg_queue}
 
         visited = set()
         queued_ids = set(initial_ids)
@@ -902,24 +906,29 @@ class BanChecker:
                 # --- START PER-ACCOUNT PROCESSING ---
 
                 # 1. Fetch Profile Details (Avatar, Name)
-                yield {"type": "progress", "msg": f"Obteniendo datos de perfil ({current_id})..."}
+                msg_fetch = "Fetching profile details..." if is_en else f"Obteniendo datos de perfil ({current_id})..."
+                yield {"type": "progress", "msg": msg_fetch}
                 details = self.get_live_steam_details(current_id)
                 name = details.get("name", "Unknown") if details else "Unknown"
                 avatar = details.get("avatar", "") if details else ""
 
-                yield {"type": "info", "msg": f"Analizando a: {name}", "avatar": avatar, "name": name, "steam_id": current_id}
+                msg_analyzing = f"Analyzing: {name}" if is_en else f"Analizando a: {name}"
+                yield {"type": "info", "msg": msg_analyzing, "avatar": avatar, "name": name, "steam_id": current_id}
 
                 if item["is_smurf"]:
                     smurf_origin = item["smurf_of_name"] or item["smurf_of"]
-                    yield {"type": "progress", "msg": f"🔍 Analizando Smurf vinculado a {smurf_origin}: {name} ({current_id})..."}
+                    msg_smurf = f"🔍 Analyzing Smurf: {name} ({current_id})..." if is_en else f"🔍 Analizando Smurf vinculado a {smurf_origin}: {name} ({current_id})..."
+                    yield {"type": "progress", "msg": msg_smurf}
                 else:
-                    yield {"type": "progress", "msg": f"Analizando jugador: {name} ({current_id})..."}
+                    msg_main = f"Analyzing main account: {current_id}..." if is_en else f"Analizando jugador: {name} ({current_id})..."
+                    yield {"type": "progress", "msg": msg_main}
 
                 bans_found = []
 
                 for source in SOURCES:
                     s_name = source["name"]
-                    yield {"type": "progress", "msg": f"Consultando {s_name}..."}
+                    msg_check = f"Checking {s_name}..." if is_en else f"Consultando {s_name}..."
+                    yield {"type": "progress", "msg": msg_check}
 
                     res = {}
                     try:
@@ -937,9 +946,11 @@ class BanChecker:
                         res = {"source": s_name, "status": "Error", "history": [str(e)]}
 
                     if res.get("status") in ["Found Records", "Banned", "BANNED"]:
-                        yield {"type": "progress", "msg": f"⚠️ {s_name}: ¡ENCONTRADO!"}
+                        msg_found = f"⚠️ {s_name}: FOUND!" if is_en else f"⚠️ {s_name}: ¡ENCONTRADO!"
+                        yield {"type": "progress", "msg": msg_found}
                     else:
-                        yield {"type": "success", "msg": f"{s_name}: Limpio"}
+                        msg_clean = f"{s_name}: Clean" if is_en else f"{s_name}: Limpio"
+                        yield {"type": "success", "msg": msg_clean}
 
                     bans_found.append(res)
 
@@ -962,7 +973,8 @@ class BanChecker:
                             "smurf_of": current_id,
                             "smurf_of_name": name
                         })
-                        yield {"type": "progress", "msg": f"🔗 Smurf detectado en historial de {name}: {rid} (añadido a la cola)"}
+                        msg_smurf_detected = f"🔗 Smurf detected in {name}'s history: {rid} (added to queue)" if is_en else f"🔗 Smurf detectado en historial de {name}: {rid} (añadido a la cola)"
+                        yield {"type": "progress", "msg": msg_smurf_detected}
 
                 # Construct player object
                 player_data = {
@@ -984,9 +996,9 @@ class BanChecker:
         finally:
             self.close_browser()
 
-    def get_all_bans(self, start_input):
+    def get_all_bans(self, start_input, lang="es"):
         # Wrapper for legacy compatibility
-        gen = self.get_all_bans_generator(start_input)
+        gen = self.get_all_bans_generator(start_input, lang=lang)
         final = None
         for item in gen:
             if item["type"] == "complete":

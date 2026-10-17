@@ -11,23 +11,29 @@
 </head>
 
 <body>
+    <div class="lang-switcher">
+        <button type="button" class="lang-btn" data-lang="es">ES</button>
+        <button type="button" class="lang-btn" data-lang="en">EN</button>
+    </div>
+
     <div class="container main-screen">
         <h1 class="glitch-text" data-text="LEFT 4 BAN">LEFT 4 BAN</h1>
-        <p class="subtitle">Multi-Source Ban Checker</p>
+        <p class="subtitle" data-i18n="subtitle">Verificador de Bans Multi-Fuente</p>
 
         <!-- Main Search Form -->
         <div class="search-box" id="search-container">
             <form id="u-form">
                 <textarea id="steam-input" name="steam_input" rows="4"
+                    data-i18n-attr="placeholder:placeholder"
                     placeholder="Pegue SteamID, URL de perfil, STEAM_1:X:Y, [U:1:X] o el texto completo del comando 'status' de la consola..."
                     required></textarea>
-                <button type="submit" class="btn-scan" id="btn-submit">ESCANEAR INFECCIÓN</button>
+                <button type="submit" class="btn-scan" id="btn-submit" data-i18n="scan_btn">ESCANEAR INFECCIÓN</button>
             </form>
         </div>
 
         <!-- Compact New Search Button (shown during/after scan) -->
         <div id="new-search-container" style="display: none; margin-bottom: 25px;">
-            <a href="/" class="btn-scan"
+            <a href="/" class="btn-scan" id="btn-new-search" data-i18n="new_search"
                 style="display: inline-block; padding: 10px 25px; font-size: 1.2rem; width: auto; background-color: #d32f2f; text-decoration: none; border: 1px solid #ff4444; box-shadow: 0 0 10px rgba(211, 47, 47, 0.5);">
                 &larr; NUEVA BÚSQUEDA
             </a>
@@ -44,10 +50,10 @@
                 <h2 id="profile-name"
                     style="margin: 0; color: #fff; font-family: 'Teko', sans-serif; font-size: 2em; letter-spacing: 2px;">
                 </h2>
-                <p style="color: #bbb; margin: 5px 0;">Analizando historial de bans...</p>
+                <p id="profile-analyzing-text" data-i18n="progress_analyzing" style="color: #bbb; margin: 5px 0;">Analizando historial de bans...</p>
             </div>
 
-            <h3 id="status-text" style="color: #ff4444; margin-top: 0; display: block;">INICIANDO ESCANEO...</h3>
+            <h3 id="status-text" data-status-key="status_starting" style="color: #ff4444; margin-top: 0; display: block;">INICIANDO ESCANEO...</h3>
 
             <ul id="progress-list"
                 style="list-style: none; padding: 0; text-align: left; max-width: 500px; margin: 0 auto; border-top: 1px solid #444; padding-top: 20px;">
@@ -65,7 +71,7 @@
         {% endif %}
 
         <div class="sources-list" id="sources-list-footer">
-            <span>Fuentes:</span>
+            <span data-i18n="sources_label">Fuentes:</span>
             <ul>
                 <li>Steam Official (VAC)</li>
                 <li>SirPlease.net</li>
@@ -76,6 +82,149 @@
     </div>
 
     <script>
+        const I18N = {
+            es: {
+                subtitle: "Verificador de Bans Multi-Fuente",
+                placeholder: "Pegue SteamID, URL de perfil, STEAM_1:X:Y, [U:1:X] o el texto completo del comando 'status' de la consola...",
+                scan_btn: "ESCANEAR INFECCIÓN",
+                new_search: "← NUEVA BÚSQUEDA",
+                sources_label: "Fuentes:",
+                progress_analyzing: "Analizando historial de bans...",
+                status_starting: "INICIANDO ESCANEO...",
+                status_connecting: "CONECTANDO CON LA BASE DE DATOS...",
+                status_searching: "BUSCANDO INFECCIONES...",
+                status_complete: "✅ ESCANEO COMPLETADO",
+                status_error_init: "ERROR AL INICIAR ESCANEO",
+                all_completed: "🎉 Todos los jugadores y smurfs han sido analizados con éxito.",
+                perm_link: "Ver enlace permanente de resultados ↗",
+                results_title: "RESULTADOS",
+                smurf_badge: "SMURF DETECTADO",
+                linked_to: "Cuenta vinculada a:",
+                view_profile: "Ver Perfil",
+                infraction_history: "Historial de Infracciones",
+                no_incidents: "Sin incidentes",
+                records: "registros",
+                manual_check: "VERIFICAR MANUALMENTE &nearr;",
+                status_clean: "LIMPIO",
+                status_records: "CON REGISTROS",
+                status_banned: "BANEADO"
+            },
+            en: {
+                subtitle: "Multi-Source Ban Checker",
+                placeholder: "Paste SteamID, profile URL, STEAM_1:X:Y, [U:1:X], or full L4D2 console 'status' output...",
+                scan_btn: "SCAN INFECTION",
+                new_search: "← NEW SEARCH",
+                sources_label: "Sources:",
+                progress_analyzing: "Analyzing ban history...",
+                status_starting: "STARTING SCAN...",
+                status_connecting: "CONNECTING TO DATABASE...",
+                status_searching: "SEARCHING FOR INFECTIONS...",
+                status_complete: "✅ SCAN COMPLETED",
+                status_error_init: "ERROR STARTING SCAN",
+                all_completed: "🎉 All players and smurfs have been successfully analyzed.",
+                perm_link: "View permanent results link ↗",
+                results_title: "RESULTS",
+                smurf_badge: "SMURF DETECTED",
+                linked_to: "Linked to account:",
+                view_profile: "View Profile",
+                infraction_history: "Infraction History",
+                no_incidents: "No incidents",
+                records: "records",
+                manual_check: "CHECK MANUALLY &nearr;",
+                status_clean: "CLEAN",
+                status_records: "RECORDS FOUND",
+                status_banned: "BANNED"
+            }
+        };
+
+        let currentLang = 'es';
+
+        function formatStatus(status, lang) {
+            if (!status) return '';
+            const s = status.toLowerCase();
+            if (s.includes('clean')) {
+                return I18N[lang].status_clean;
+            }
+            if (s.includes('bann')) {
+                return I18N[lang].status_banned;
+            }
+            if (s.includes('record') || s.includes('found')) {
+                return I18N[lang].status_records;
+            }
+            return status;
+        }
+
+        function setLanguage(lang) {
+            if (!I18N[lang]) lang = 'es';
+            currentLang = lang;
+            localStorage.setItem('l4b_lang', lang);
+            document.documentElement.lang = lang;
+
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-lang') === lang);
+            });
+
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (I18N[lang] && I18N[lang][key]) {
+                    el.innerHTML = I18N[lang][key];
+                }
+            });
+
+            document.querySelectorAll('[data-i18n-attr]').forEach(el => {
+                const parts = el.getAttribute('data-i18n-attr').split(':');
+                const attr = parts[0];
+                const key = parts[1];
+                if (attr && key && I18N[lang] && I18N[lang][key]) {
+                    el.setAttribute(attr, I18N[lang][key]);
+                }
+            });
+
+            document.querySelectorAll('[data-i18n-status]').forEach(el => {
+                const orig = el.getAttribute('data-original-status');
+                el.innerText = formatStatus(orig, lang);
+            });
+
+            document.querySelectorAll('[data-i18n-details]').forEach(el => {
+                const details = el.getAttribute('data-details');
+                const count = parseInt(el.getAttribute('data-count') || '0', 10);
+                if (details) {
+                    el.innerText = details;
+                } else if (count > 0) {
+                    el.innerText = `${count} ${I18N[lang].records}`;
+                } else {
+                    el.innerText = I18N[lang].no_incidents;
+                }
+            });
+
+            document.querySelectorAll('[data-i18n-smurf]').forEach(el => {
+                const linked = el.getAttribute('data-smurf-of');
+                if (linked) {
+                    el.innerText = `${I18N[lang].smurf_badge} (${I18N[lang].linked_to} ${linked})`;
+                } else {
+                    el.innerText = I18N[lang].smurf_badge;
+                }
+            });
+
+            if (statusText && statusText.getAttribute('data-status-key')) {
+                const key = statusText.getAttribute('data-status-key');
+                if (I18N[lang] && I18N[lang][key]) {
+                    statusText.innerText = I18N[lang][key];
+                }
+            }
+
+            const newSearchBtn = document.getElementById('btn-new-search');
+            if (newSearchBtn) {
+                newSearchBtn.href = '/?lang=' + lang;
+            }
+
+            try {
+                const url = new URL(window.location);
+                url.searchParams.set('lang', lang);
+                window.history.replaceState({}, '', url);
+            } catch (e) {}
+        }
+
         const form = document.getElementById('u-form');
         const searchContainer = document.getElementById('search-container');
         const newSearchContainer = document.getElementById('new-search-container');
@@ -106,8 +255,9 @@
             let smurfBadgeHtml = '';
             if (player.is_smurf) {
                 const linkedTo = player.smurf_of_name || player.smurf_of;
-                const linkedText = linkedTo ? ` (Cuenta vinculada a: ${escapeHtml(linkedTo)})` : '';
-                smurfBadgeHtml = `<div class="smurf-badge">SMURF DETECTADO${linkedText}</div>`;
+                const linkedAttr = linkedTo ? escapeHtml(linkedTo) : '';
+                const linkedText = linkedTo ? ` (${I18N[currentLang].linked_to} ${escapeHtml(linkedTo)})` : '';
+                smurfBadgeHtml = `<div class="smurf-badge" data-i18n-smurf data-smurf-of="${linkedAttr}">${I18N[currentLang].smurf_badge}${linkedText}</div>`;
             }
 
             const avatarHtml = player.avatar ? `<img src="${escapeHtml(player.avatar)}" alt="Avatar" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid #fff;">` : '';
@@ -117,30 +267,37 @@
             for (const item of (player.results || [])) {
                 const isClean = item.status && (item.status.toLowerCase() === 'clean' || item.status.toLowerCase() === 'clean (api checked)');
                 const cardClass = isClean ? 'clean' : 'banned';
+                const displayStatus = formatStatus(item.status, currentLang);
 
-                let detailsHtml = 'Sin incidentes';
+                let detailsHtml = '';
+                let dataDetails = '';
+                let dataCount = 0;
                 if (item.details) {
                     detailsHtml = escapeHtml(item.details);
+                    dataDetails = escapeHtml(item.details);
                 } else if (item.history && item.history.length > 0) {
-                    detailsHtml = `${item.history.length} registros`;
+                    detailsHtml = `${item.history.length} ${I18N[currentLang].records}`;
+                    dataCount = item.history.length;
+                } else {
+                    detailsHtml = I18N[currentLang].no_incidents;
                 }
 
                 let historyHtml = '';
                 if (item.history && item.history.length > 0) {
                     const listItems = item.history.map(r => `<li>${escapeHtml(r)}</li>`).join('');
-                    historyHtml = `<div class="history-log"><h4>Historial de Infracciones</h4><ul>${listItems}</ul></div>`;
+                    historyHtml = `<div class="history-log"><h4 data-i18n="infraction_history">${I18N[currentLang].infraction_history}</h4><ul>${listItems}</ul></div>`;
                 }
 
                 let manualBtnHtml = '';
                 if (item.manual_check_url) {
-                    manualBtnHtml = `<div class="manual-check-container"><a href="${escapeHtml(item.manual_check_url)}" target="_blank" class="btn-manual">VERIFICAR MANUALMENTE &nearr;</a></div>`;
+                    manualBtnHtml = `<div class="manual-check-container"><a href="${escapeHtml(item.manual_check_url)}" target="_blank" class="btn-manual" data-i18n="manual_check">${I18N[currentLang].manual_check}</a></div>`;
                 }
 
                 cardsHtml += `
                     <div class="card ${cardClass}">
                         <h3>${escapeHtml(item.source)}</h3>
-                        <div class="status-badge">${escapeHtml(item.status || '')}</div>
-                        <p class="details">${detailsHtml}</p>
+                        <div class="status-badge" data-i18n-status data-original-status="${escapeHtml(item.status || '')}">${escapeHtml(displayStatus)}</div>
+                        <p class="details" data-i18n-details data-details="${dataDetails}" data-count="${dataCount}">${detailsHtml}</p>
                         ${historyHtml}
                         ${manualBtnHtml}
                     </div>
@@ -162,7 +319,7 @@
                         </div>
                     </div>
                     <a href="${escapeHtml(player.profile_url)}" target="_blank" class="steam-link">
-                        <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" alt="Steam" width="20"> Ver Perfil
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" alt="Steam" width="20"> <span data-i18n="view_profile">${I18N[currentLang].view_profile}</span>
                     </a>
                 </header>
                 <div class="summary-grid">
@@ -185,7 +342,9 @@
             progressView.style.display = 'block';
             progressList.innerHTML = '';
             liveResultsQueue.innerHTML = '';
-            statusText.innerText = "CONECTANDO CON LA BASE DE DATOS...";
+            statusText.setAttribute('data-status-key', 'status_connecting');
+            statusText.innerText = I18N[currentLang].status_connecting;
+            statusText.style.color = '#ff4444';
             profileInfo.style.display = 'none';
 
             let jobId = null;
@@ -193,11 +352,12 @@
                 const resp = await fetch('/api/start_check', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ steam_input: inputVal })
+                    body: JSON.stringify({ steam_input: inputVal, lang: currentLang })
                 });
                 const data = await resp.json();
                 if (data.error) {
-                    statusText.innerText = "ERROR AL INICIAR ESCANEO";
+                    statusText.setAttribute('data-status-key', 'status_error_init');
+                    statusText.innerText = I18N[currentLang].status_error_init;
                     const li = document.createElement('li');
                     li.style.color = 'red';
                     li.innerHTML = `❌ ${escapeHtml(data.error)}`;
@@ -210,8 +370,8 @@
                 jobId = encodeURIComponent(inputVal);
             }
 
-            // Start Stream
-            const evtSource = new EventSource("/stream_check/" + jobId);
+            // Start Stream with lang query param fallback
+            const evtSource = new EventSource("/stream_check/" + jobId + "?lang=" + currentLang);
 
             evtSource.onmessage = function (e) {
                 const data = JSON.parse(e.data);
@@ -226,7 +386,8 @@
                             profileAvatar.style.display = 'none';
                         }
                         profileInfo.style.display = 'block';
-                        statusText.innerText = "BUSCANDO INFECCIONES...";
+                        statusText.setAttribute('data-status-key', 'status_searching');
+                        statusText.innerText = I18N[currentLang].status_searching;
                     }
                 } else if (data.type === 'progress') {
                     const li = document.createElement('li');
@@ -254,7 +415,8 @@
                         liveResultsQueue.appendChild(card);
                     }
                 } else if (data.type === 'complete' || data.type === 'redirect') {
-                    statusText.innerText = "✅ ESCANEO COMPLETADO";
+                    statusText.setAttribute('data-status-key', 'status_complete');
+                    statusText.innerText = I18N[currentLang].status_complete;
                     statusText.style.color = "#44ff44";
                     profileInfo.style.display = 'none';
 
@@ -268,8 +430,16 @@
 
                     const li = document.createElement('li');
                     li.style.color = '#44ff44';
-                    li.innerHTML = `🎉 Todos los jugadores y smurfs han sido analizados con éxito.`;
+                    li.setAttribute('data-i18n', 'all_completed');
+                    li.innerHTML = I18N[currentLang].all_completed;
                     progressList.appendChild(li);
+
+                    if (data.url) {
+                        const permLi = document.createElement('li');
+                        permLi.style.marginTop = '10px';
+                        permLi.innerHTML = `<a href="${escapeHtml(data.url)}" style="color: #4fa8e6; text-decoration: underline;" data-i18n="perm_link">${I18N[currentLang].perm_link}</a>`;
+                        progressList.appendChild(permLi);
+                    }
 
                     evtSource.close();
                 }
@@ -279,6 +449,33 @@
                 console.error("Stream Error", e);
                 evtSource.close();
             };
+        });
+
+        // Initialize language
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const paramLang = params.get('lang');
+            let initialLang = 'es';
+            if (paramLang && (paramLang === 'es' || paramLang === 'en')) {
+                initialLang = paramLang;
+            } else {
+                initialLang = localStorage.getItem('l4b_lang') || 'es';
+            }
+            setLanguage(initialLang);
+
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    setLanguage(btn.getAttribute('data-lang'));
+                });
+            });
+
+            const newSearchBtn = document.getElementById('btn-new-search');
+            if (newSearchBtn) {
+                newSearchBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.location.href = '/?lang=' + currentLang;
+                });
+            }
         });
     </script>
 </body>

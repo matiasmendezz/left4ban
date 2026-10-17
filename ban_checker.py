@@ -12,13 +12,14 @@ import cloudscraper
 STEAM_API_KEY = os.getenv("STEAM_API_KEY", "") # User can set this env var or input it
 SOURCES = [
     {
+        "name": "Steam Official",
+        "url": "https://steamcommunity.com/profiles/",
+        "type": "steam_official"
+    },
+    {
         "name": "SirPlease",
-        "url": "https://sirplease.vercel.app/api/bans", # Guessed API endpoint for SPA, or we scrape frontend?
-        # Re-reading: SirPlease on Vercel is likely an SPA. Let's try standard scraping on the visible URL first, 
-        # but usually SPAs fetch JSON. 
-        # Strategy: Use a known SourceBans pattern + Fallback. 
-        # Users url: https://sirplease.vercel.app/bans 
-        "type": "custom_sirplease" 
+        "url": "https://sirplease.vercel.app/api/bans",
+        "type": "custom_sirplease"
     },
     {
         "name": "L4D2Center",
@@ -29,11 +30,6 @@ SOURCES = [
         "name": "CedaPug",
         "url": "https://cedapug.com/bans",
         "type": "cedapug_scrape"
-    },
-    {
-        "name": "Lalohlz",
-        "url": "https://sb.lalohlz.games/index.php?p=banlist&advSearch=",
-        "type": "sourcebans_standard" 
     }
 ]
 
@@ -167,93 +163,64 @@ class BanChecker:
         except:
             return steam_id64
 
-    def check_sourcebans_standard(self, base_url, steam_id):
+    def check_steam_official(self, steam_id):
         """
-        Scrapes a standard SourceBans++ installationUrl.
+        Checks official Steam VAC and Trade bans.
+        Uses Steam API if key is available, falls back to XML community profile.
         """
-        # Lalohlz SPECIFIC: Uses SteamID2
-        if "lalohlz" in base_url and steam_id.isdigit():
-             search_term = self.steam64_to_id2(steam_id)
-        else:
-             search_term = steam_id
+        if self.api_key:
+            res = self.check_steam_api(steam_id)
+            if not res.get("error"):
+                res.setdefault("manual_check_url", f"https://steamcommunity.com/profiles/{steam_id}")
+                if res.get("status") == "BANNED" and not res.get("history") and res.get("details"):
+                    res["history"] = [res["details"]]
+                return res
 
-        # Ensure correct query param
-        if base_url.endswith("=") or "searchText=" in base_url or "advSearch=" in base_url:
-             # User requested specific format: &advType=steamid (User said 'steam' but URL usually is steamid for SourceBans, let's stick to what works or try appending if needed)
-             # User said: https://sb.lalohlz.games/index.php?p=banlist&advSearch=STEAM_1:0:206134048&advType=steam
-             # My previous code appended ID directly.
-             # Let's ensure we match that structure if "lalohlz" is detected.
-             if "lalohlz" in base_url:
-                  search_url = f"{base_url}{search_term}&advType=steamid"
-             else:
-                  search_url = f"{base_url}{search_term}"
-        else:
-             search_url = f"{base_url.rstrip('/')}/index.php?p=banlist&searchText={search_term}&Submit="
-             
-        print(f"[*] Escaneando {base_url} -> {search_url} ...")
-        
+        url = f"https://steamcommunity.com/profiles/{steam_id}/?xml=1"
         try:
-            resp = self.session.get(search_url, timeout=15)
-            soup = BeautifulSoup(resp.content, "lxml")
-            
-            # Find ALL tables and search for the one with ban headers
-            tables = soup.find_all("table")
-            ban_table = None
-            
-            for tbl in tables:
-                text_content = tbl.get_text().lower()
-                if "invoked on" in text_content or ("player" in text_content and "length" in text_content):
-                    ban_table = tbl
-                    break
-            
-            if not ban_table:
-                if "no bans found" in resp.text.lower() or "total bans: 0" in resp.text.lower():
-                     return {"source": "Lalohlz" if "lalohlz" in base_url else base_url, "status": "Clean", "history": []}
-                return {"source": "Lalohlz" if "lalohlz" in base_url else base_url, "status": "Clean", "history": []}
+            resp = self.session.get(url, timeout=10)
+            if resp.status_code != 200:
+                return {
+                    "source": "Steam Official",
+                    "status": "Error",
+                    "error": f"HTTP {resp.status_code}",
+                    "details": f"HTTP Error {resp.status_code}",
+                    "history": [],
+                    "manual_check_url": f"https://steamcommunity.com/profiles/{steam_id}"
+                }
 
-            rows = ban_table.find_all("tr")
-            history = []
-            
-            # Skip header
-            for row in rows:
-                cols = row.find_all(["td", "th"])
-                row_text = row.get_text(" ", strip=True)
-                
-                # Basic validation of a ban row
-                if "Permanent" in row_text or "expired" in row_text.lower() or "banned" in row_text.lower() or "invoked" in row_text.lower():
-                     # Skip header
-                     if "invoked on" in row_text.lower() and "length" in row_text.lower():
-                         continue
-                     
-                     # Extract details if possible
-                     # Based on debug: Index 4 is Length.
-                     # "MOD/Country", "Date", "Player", "Admin", "Length"
-                     # We can try to grab Length specifically.
-                     
-                     details = row_text[:100] + "..."
-                     if len(cols) >= 5:
-                         try:
-                             ban_date = cols[1].get_text(strip=True)
-                             ban_len = cols[4].get_text(strip=True)
-                             details = f"Date: {ban_date} | Length: {ban_len}"
-                         except:
-                             pass
-                     
-                     history.append(details)
-            
-            status = "Clean"
-            if len(history) > 0:
-                status = "Found Records"
-                
+            tree = ET.fromstring(resp.content)
+            vac_elem = tree.findtext("vacBanned", "").strip()
+            trade_elem = tree.findtext("tradeBanState", "").strip()
+
+            vac_banned = (vac_elem == "1")
+            trade_banned = bool(trade_elem and trade_elem.lower() != "none")
+            is_banned = vac_banned or trade_banned
+
+            bans = []
+            if vac_banned:
+                bans.append("VAC Banned")
+            if trade_banned:
+                bans.append(f"Trade Ban: {trade_elem}")
+
+            details_str = ", ".join(bans) if bans else "Limpio"
+
             return {
-                "source": "Lalohlz" if "lalohlz" in base_url else base_url,
-                "status": status,
-                "history": history,
-                "manual_check_url": search_url
+                "source": "Steam Official",
+                "status": "BANNED" if is_banned else "Clean",
+                "details": details_str,
+                "history": [details_str] if is_banned else [],
+                "manual_check_url": f"https://steamcommunity.com/profiles/{steam_id}"
             }
-            
         except Exception as e:
-            return {"source": "Lalohlz" if "lalohlz" in base_url else base_url, "status": "Error", "history": [str(e)]}
+            return {
+                "source": "Steam Official",
+                "status": "Error",
+                "error": str(e),
+                "details": str(e),
+                "history": [],
+                "manual_check_url": f"https://steamcommunity.com/profiles/{steam_id}"
+            }
 
     def check_sirplease_custom(self, base_url, steam_id):
         """
@@ -651,23 +618,18 @@ class BanChecker:
 
         # Collect results
         results_list = []
-        
-        # 1. Steam API - Removed per user request
-        # res_steam = self.check_steam_api(steam_id)
-        # results_list.append(res_steam)
-        
-        # 2. SourceBans Checks
+
         for source in SOURCES:
-            if source["name"] == "L4D2Center":
-                 res = self.check_l4d2center(source["url"], steam_id)
+            if source["type"] == "steam_official":
+                res = self.check_steam_official(steam_id)
+            elif source["type"] == "l4d2center_api" or source["name"] == "L4D2Center":
+                res = self.check_l4d2center(source["url"], steam_id)
             elif source["type"] == "cedapug_scrape":
-                 res = self.check_cedapug(source["url"], steam_id)
-            elif source["type"] == "sourcebans_standard":
-                res = self.check_sourcebans_standard(source["url"], steam_id)
+                res = self.check_cedapug(source["url"], steam_id)
             elif source["type"] == "custom_sirplease":
                 res = self.check_sirplease_custom(source["url"], steam_id)
             else:
-                 res = {"source": source["name"], "status": "Skipped", "history": []}
+                res = {"source": source["name"], "status": "Skipped", "history": []}
             results_list.append(res)
             
         return {
@@ -780,14 +742,12 @@ class BanChecker:
                         res = self.check_cedapug(source["url"], current_id)
                     elif source["type"] == "custom_sirplease":
                         res = self.check_sirplease_custom(source["url"], current_id)
-                    elif source["type"] == "sourcebans_standard":
-                        res = self.check_sourcebans_standard(source["url"], current_id)
                     else:
                         res = {"source": s_name, "status": "Unknown", "history": []}
                  except Exception as e:
                      res = {"source": s_name, "status": "Error", "history": [str(e)]}
 
-                 if res.get("status") == "Found Records" or res.get("status") == "Banned":
+                 if res.get("status") in ["Found Records", "Banned", "BANNED"]:
                        yield {"type": "progress", "msg": f"⚠️ {s_name}: ¡ENCONTRADO!"}
                  else:
                        yield {"type": "success", "msg": f"{s_name}: Limpio"}

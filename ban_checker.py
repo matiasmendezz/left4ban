@@ -108,34 +108,102 @@ class BanChecker:
 
     def resolve_steam_id(self, input_str):
         """
-        Resolves a Steam Profile URL (vanity or ID64) to a SteamID64 string.
+        Resolves a Steam Profile URL (vanity or ID64), SteamID2, SteamID3, or vanity name to a SteamID64 string.
         """
+        if not input_str:
+            return None
         input_str = input_str.strip()
-        
+
         # Already an ID64? (17 digits)
         if re.match(r'^\d{17}$', input_str):
             return input_str
-            
+
+        # Check for SteamID2 format (STEAM_0:X:Y or STEAM_1:X:Y)
+        s2 = self.steam2_to_steam64(input_str)
+        if s2:
+            return s2
+
+        # Check for SteamID3 format ([U:1:X] or U:1:X)
+        s3 = self.steam3_to_steam64(input_str)
+        if s3:
+            return s3
+
         # URL parsing
         # Check for /profiles/ (Direct ID)
-        # Handle trailing slashes or query params
         match_profiles = re.search(r'steamcommunity\.com/profiles/(\d{17})', input_str)
         if match_profiles:
             return match_profiles.group(1)
-            
+
         # Check for /id/ (Vanity URL)
-        # Stop at / or ? or end of string
         match_id = re.search(r'steamcommunity\.com/id/([^/?]+)', input_str)
         if match_id:
             vanity = match_id.group(1)
             return self._resolve_vanity_xml(vanity)
-            
+
         # If user just gave the vanity name without URL
         if not "/" in input_str and not input_str.isdigit():
-             return self._resolve_vanity_xml(input_str)
+            return self._resolve_vanity_xml(input_str)
 
         print(f"Error: No se pudo interpretar el input: {input_str}")
         return None
+
+    def parse_multiple_steam_inputs(self, raw_text):
+        """
+        Parses single or bulk text (e.g. L4D2 console 'status' output, list of URLs, SteamID2, SteamID3, SteamID64, or vanity names)
+        and extracts all unique 17-digit SteamID64 strings in order of discovery.
+        """
+        if not raw_text:
+            return []
+
+        resolved_ids = []
+        seen = set()
+
+        def add_id(sid):
+            if sid and isinstance(sid, str):
+                sid = sid.strip()
+                if re.match(r'^\d{17}$', sid):
+                    if sid not in seen:
+                        seen.add(sid)
+                        resolved_ids.append(sid)
+
+        pattern = re.compile(
+            r'(?:steamcommunity\.com/profiles/(?P<prof>7656\d{13}))|'
+            r'(?:steamcommunity\.com/id/(?P<vanity>[a-zA-Z0-9_-]+))|'
+            r'(?P<steam2>STEAM_[01]:[01]:\d+)|'
+            r'(?P<steam3>\[?U:1:\d+\]?)|'
+            r'(?:\b(?P<id64>7656\d{13})\b)',
+            re.IGNORECASE
+        )
+
+        matches_found = False
+        for match in pattern.finditer(raw_text):
+            matches_found = True
+            gd = match.groupdict()
+            if gd.get('prof'):
+                add_id(gd['prof'])
+            elif gd.get('vanity'):
+                resolved = self._resolve_vanity_xml(gd['vanity'])
+                if resolved:
+                    add_id(resolved)
+            elif gd.get('steam2'):
+                add_id(self.steam2_to_steam64(gd['steam2']))
+            elif gd.get('steam3'):
+                add_id(self.steam3_to_steam64(gd['steam3']))
+            elif gd.get('id64'):
+                add_id(gd['id64'])
+
+        # Fallback if no regex pattern matched in raw_text:
+        # Split raw_text by newlines, commas, or spaces and try resolve_steam_id for tokens
+        if not matches_found or not resolved_ids:
+            tokens = re.split(r'[\r\n,\s]+', raw_text.strip())
+            for tok in tokens:
+                tok = tok.strip()
+                if tok:
+                    res = self.resolve_steam_id(tok)
+                    if res:
+                        add_id(res)
+
+        return resolved_ids
 
     def _resolve_vanity_xml(self, vanity):
         print(f"[*] Resolviendo Vanity URL '{vanity}' vía XML...")
@@ -805,20 +873,20 @@ class BanChecker:
     def get_all_bans_generator(self, start_input):
         """
         Generator for SSE progress updates.
-        Yields: {"type": "progress"|"complete"|"error"|"info", "msg": "...", "result": data}
+        Yields: {"type": "progress"|"complete"|"error"|"info"|"player_result", "msg": "...", "result": data, "player": player_data}
         """
-        yield {"type": "progress", "msg": f"Resolviendo Steam ID: {start_input}..."}
+        yield {"type": "progress", "msg": "Analizando entrada y resolviendo Steam IDs..."}
 
-        start_id = self.resolve_steam_id(start_input)
-        if not start_id:
-            yield {"type": "error", "msg": "No se pudo resolver el Steam ID. Verifique la URL/ID."}
+        initial_ids = self.parse_multiple_steam_inputs(start_input)
+        if not initial_ids:
+            yield {"type": "error", "msg": "No se pudo identificar ningún Steam ID válido en el texto ingresado."}
             return
 
-        yield {"type": "progress", "msg": f"ID Resuelto: {start_id}"}
+        yield {"type": "progress", "msg": f"Jugadores detectados en cola inicial: {len(initial_ids)}"}
 
         visited = set()
-        queued_ids = {start_id}
-        queue = [{"steam_id": start_id, "is_smurf": False, "smurf_of": None, "smurf_of_name": None}]
+        queued_ids = set(initial_ids)
+        queue = [{"steam_id": sid, "is_smurf": False, "smurf_of": None, "smurf_of_name": None} for sid in initial_ids]
 
         all_players_data = []
 
@@ -834,7 +902,7 @@ class BanChecker:
                 # --- START PER-ACCOUNT PROCESSING ---
 
                 # 1. Fetch Profile Details (Avatar, Name)
-                yield {"type": "progress", "msg": "Obteniendo datos de perfil..."}
+                yield {"type": "progress", "msg": f"Obteniendo datos de perfil ({current_id})..."}
                 details = self.get_live_steam_details(current_id)
                 name = details.get("name", "Unknown") if details else "Unknown"
                 avatar = details.get("avatar", "") if details else ""
@@ -845,7 +913,7 @@ class BanChecker:
                     smurf_origin = item["smurf_of_name"] or item["smurf_of"]
                     yield {"type": "progress", "msg": f"🔍 Analizando Smurf vinculado a {smurf_origin}: {name} ({current_id})..."}
                 else:
-                    yield {"type": "progress", "msg": f"Analizando cuenta principal: {current_id}..."}
+                    yield {"type": "progress", "msg": f"Analizando jugador: {name} ({current_id})..."}
 
                 bans_found = []
 
@@ -908,6 +976,9 @@ class BanChecker:
                     "smurf_of_name": item["smurf_of_name"]
                 }
                 all_players_data.append(player_data)
+
+                # Immediately yield player_result for live rendering
+                yield {"type": "player_result", "player": player_data}
 
             yield {"type": "complete", "result": all_players_data}
         finally:

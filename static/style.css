@@ -29,7 +29,7 @@ body {
 
 .container {
     width: 90%;
-    max-width: 900px;
+    max-width: 1100px;
     margin-top: 50px;
     text-align: center;
 }
@@ -54,9 +54,9 @@ body {
     margin-bottom: 30px;
 }
 
-input[type="text"] {
+input[type="text"], textarea#steam-input {
     width: 100%;
-    max-width: 500px;
+    max-width: 650px;
     padding: 15px;
     background: #222;
     border: 2px solid #444;
@@ -67,7 +67,12 @@ input[type="text"] {
     transition: 0.3s;
 }
 
-input[type="text"]:focus {
+textarea#steam-input {
+    min-height: 110px;
+    resize: vertical;
+}
+
+input[type="text"]:focus, textarea#steam-input:focus {
     border-color: var(--accent-red);
 }
 
@@ -141,7 +146,7 @@ input[type="text"]:focus {
     display: grid;
     /* Force 4 columns on large screens */
     grid-template-columns: repeat(4, 1fr);
-    gap: 40px;
+    gap: 20px;
     align-items: start;
     /* Align tops */
 }

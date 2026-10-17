@@ -24,11 +24,13 @@
 
         <section class="players-container">
             {% for player in data %}
-            <div class="player-section {% if loop.index > 1 %}smurf-account{% endif %}">
+            <div class="player-section {% if player.is_smurf %}smurf-account{% endif %}">
                 <header class="player-header">
                     <div class="header-info">
-                        {% if loop.index > 1 %}
-                        <div class="smurf-badge">SMURF DETECTADO</div>
+                        {% if player.is_smurf %}
+                        <div class="smurf-badge">
+                            SMURF DETECTADO{% if player.smurf_of_name or player.smurf_of %} (Cuenta vinculada a: {{ player.smurf_of_name or player.smurf_of }}){% endif %}
+                        </div>
                         {% endif %}
 
                         <!-- Avatar Display -->

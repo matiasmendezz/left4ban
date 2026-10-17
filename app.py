@@ -9,6 +9,7 @@ checker = BanChecker(api_key=STEAM_API_KEY)
 # Simple in-memory cache for results
 # In production, use Redis or a database
 RESULTS_CACHE = {}
+JOBS_CACHE = {}
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -17,34 +18,54 @@ def index():
     # We keep it simple: Just render index.
     return render_template('index.html')
 
+@app.route('/api/start_check', methods=['POST'])
+def start_check():
+    data = request.get_json(silent=True) or request.form or {}
+    steam_input = (data.get('steam_input') or '').strip()
+    lang = data.get('lang', 'es')
+    if not steam_input:
+        return {"error": "Empty input"}, 400
+    job_id = str(uuid.uuid4())
+    JOBS_CACHE[job_id] = {"steam_input": steam_input, "lang": lang}
+    return {"job_id": job_id}
+
 @app.route('/stream_check/<path:steam_input>')
 def stream_check(steam_input):
+    if steam_input in JOBS_CACHE:
+        actual_input = JOBS_CACHE[steam_input]["steam_input"]
+    else:
+        actual_input = steam_input
+
     def generate():
         # Yield padding to force browser buffer flush
         yield ":" + (" " * 2048) + "\n\n"
         
-        gen = checker.get_all_bans_generator(steam_input)
+        gen = checker.get_all_bans_generator(actual_input)
         final_result = None
         
         try:
             for item in gen:
-                # Catch 'complete' immediately and redirect
+                # Catch 'complete' immediately
                 if item["type"] == "complete":
                     print(f"[DEBUG] Generator complete. Result captured (len={len(item['result'])}).")
                     final_result = item["result"]
                     
-                    # STORE AND REDIRECT NOW
                     res_id = str(uuid.uuid4())
                     RESULTS_CACHE[res_id] = final_result
                     
-                    print(f"[DEBUG] Sending redirect to {res_id}")
-                    yield f"data: {json.dumps({'type': 'redirect', 'url': url_for('show_result', result_id=res_id)})}\n\n"
+                    complete_payload = {
+                        'type': 'complete',
+                        'url': url_for('show_result', result_id=res_id),
+                        'result_id': res_id
+                    }
+                    yield f"data: {json.dumps(complete_payload)}\n\n"
                     
-                    # Heavy padding to force flush
-                    yield ":" + (" " * 8192) + "\n\n" 
-                    
-                    import time
-                    time.sleep(2)
+                    redirect_payload = {
+                        'type': 'redirect',
+                        'url': url_for('show_result', result_id=res_id),
+                        'result_id': res_id
+                    }
+                    yield f"data: {json.dumps(redirect_payload)}\n\n"
                     return
 
                 yield f"data: {json.dumps(item)}\n\n"
@@ -56,7 +77,7 @@ def stream_check(steam_input):
             
         # Fallback if generator finishes without 'complete' (Should not happen usually)
         if not final_result:
-             yield f"data: {json.dumps({'type': 'error', 'msg': 'El escaneo terminó sin resultados.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'msg': 'El escaneo terminó sin resultados.'})}\n\n"
 
     headers = {
         'Cache-Control': 'no-cache',

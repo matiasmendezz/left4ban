@@ -18,15 +18,24 @@
         <!-- Main Search Form -->
         <div class="search-box" id="search-container">
             <form id="u-form">
-                <input type="text" id="steam-input" name="steam_input"
-                    placeholder="Pegue URL de Steam o ID (Ej: 7656...)" required autocomplete="off">
-                <button type="submit" class="btn-scan">ESCANEAR INFECCIÓN</button>
+                <textarea id="steam-input" name="steam_input" rows="4"
+                    placeholder="Pegue SteamID, URL de perfil, STEAM_1:X:Y, [U:1:X] o el texto completo del comando 'status' de la consola..."
+                    required></textarea>
+                <button type="submit" class="btn-scan" id="btn-submit">ESCANEAR INFECCIÓN</button>
             </form>
+        </div>
+
+        <!-- Compact New Search Button (shown during/after scan) -->
+        <div id="new-search-container" style="display: none; margin-bottom: 25px;">
+            <a href="/" class="btn-scan"
+                style="display: inline-block; padding: 10px 25px; font-size: 1.2rem; width: auto; background-color: #d32f2f; text-decoration: none; border: 1px solid #ff4444; box-shadow: 0 0 10px rgba(211, 47, 47, 0.5);">
+                &larr; NUEVA BÚSQUEDA
+            </a>
         </div>
 
         <!-- Progress View (Hidden by default) -->
         <div class="progress-view" id="progress-view"
-            style="display: none; text-align: center; background: rgba(0,0,0,0.8); padding: 30px; border: 1px solid #ff4444; border-radius: 8px;">
+            style="display: none; text-align: center; background: rgba(0,0,0,0.8); padding: 30px; border: 1px solid #ff4444; border-radius: 8px; margin-bottom: 30px;">
 
             <!-- Dynamic Profile Info -->
             <div id="profile-info" style="margin-bottom: 20px; display: none;">
@@ -41,10 +50,13 @@
             <h3 id="status-text" style="color: #ff4444; margin-top: 0; display: block;">INICIANDO ESCANEO...</h3>
 
             <ul id="progress-list"
-                style="list-style: none; padding: 0; text-align: left; max-width: 400px; margin: 0 auto; border-top: 1px solid #444; padding-top: 20px;">
+                style="list-style: none; padding: 0; text-align: left; max-width: 500px; margin: 0 auto; border-top: 1px solid #444; padding-top: 20px;">
                 <!-- Items added by JS -->
             </ul>
         </div>
+
+        <!-- Live Results Queue -->
+        <section class="players-container" id="live-results-queue" style="margin-top: 20px; text-align: left;"></section>
 
         {% if error %}
         <div class="error-msg">
@@ -52,7 +64,7 @@
         </div>
         {% endif %}
 
-        <div class="sources-list">
+        <div class="sources-list" id="sources-list-footer">
             <span>Fuentes:</span>
             <ul>
                 <li>Steam Official (VAC)</li>
@@ -66,16 +78,102 @@
     <script>
         const form = document.getElementById('u-form');
         const searchContainer = document.getElementById('search-container');
+        const newSearchContainer = document.getElementById('new-search-container');
         const progressView = document.getElementById('progress-view');
         const progressList = document.getElementById('progress-list');
         const statusText = document.getElementById('status-text');
+        const liveResultsQueue = document.getElementById('live-results-queue');
 
         // Profile Elements
         const profileInfo = document.getElementById('profile-info');
         const profileName = document.getElementById('profile-name');
         const profileAvatar = document.getElementById('profile-avatar');
 
-        form.addEventListener('submit', function (e) {
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function createPlayerCard(player) {
+            const section = document.createElement('div');
+            section.className = 'player-section' + (player.is_smurf ? ' smurf-account' : '');
+
+            let smurfBadgeHtml = '';
+            if (player.is_smurf) {
+                const linkedTo = player.smurf_of_name || player.smurf_of;
+                const linkedText = linkedTo ? ` (Cuenta vinculada a: ${escapeHtml(linkedTo)})` : '';
+                smurfBadgeHtml = `<div class="smurf-badge">SMURF DETECTADO${linkedText}</div>`;
+            }
+
+            const avatarHtml = player.avatar ? `<img src="${escapeHtml(player.avatar)}" alt="Avatar" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid #fff;">` : '';
+            const playerNameHtml = (player.player_name && player.player_name !== 'Unknown') ? `<h2 style="margin: 0; line-height: 1.2;"><span class="player-name">${escapeHtml(player.player_name)}</span></h2>` : '';
+
+            let cardsHtml = '';
+            for (const item of (player.results || [])) {
+                const isClean = item.status && (item.status.toLowerCase() === 'clean' || item.status.toLowerCase() === 'clean (api checked)');
+                const cardClass = isClean ? 'clean' : 'banned';
+
+                let detailsHtml = 'Sin incidentes';
+                if (item.details) {
+                    detailsHtml = escapeHtml(item.details);
+                } else if (item.history && item.history.length > 0) {
+                    detailsHtml = `${item.history.length} registros`;
+                }
+
+                let historyHtml = '';
+                if (item.history && item.history.length > 0) {
+                    const listItems = item.history.map(r => `<li>${escapeHtml(r)}</li>`).join('');
+                    historyHtml = `<div class="history-log"><h4>Historial de Infracciones</h4><ul>${listItems}</ul></div>`;
+                }
+
+                let manualBtnHtml = '';
+                if (item.manual_check_url) {
+                    manualBtnHtml = `<div class="manual-check-container"><a href="${escapeHtml(item.manual_check_url)}" target="_blank" class="btn-manual">VERIFICAR MANUALMENTE &nearr;</a></div>`;
+                }
+
+                cardsHtml += `
+                    <div class="card ${cardClass}">
+                        <h3>${escapeHtml(item.source)}</h3>
+                        <div class="status-badge">${escapeHtml(item.status || '')}</div>
+                        <p class="details">${detailsHtml}</p>
+                        ${historyHtml}
+                        ${manualBtnHtml}
+                    </div>
+                `;
+            }
+
+            section.innerHTML = `
+                <header class="player-header">
+                    <div class="header-info">
+                        ${smurfBadgeHtml}
+                        <div class="player-identity" style="display: flex; align-items: center; gap: 15px;">
+                            ${avatarHtml}
+                            <div>
+                                ${playerNameHtml}
+                                <span style="color: rgba(255,255,255,0.6); font-family: 'Roboto Mono', monospace; font-size: 0.9em;">
+                                    ID: <span class="highlight">${escapeHtml(player.steam_id)}</span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <a href="${escapeHtml(player.profile_url)}" target="_blank" class="steam-link">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/8/83/Steam_icon_logo.svg" alt="Steam" width="20"> Ver Perfil
+                    </a>
+                </header>
+                <div class="summary-grid">
+                    ${cardsHtml}
+                </div>
+            `;
+
+            return section;
+        }
+
+        form.addEventListener('submit', async function (e) {
             e.preventDefault();
             const inputVal = document.getElementById('steam-input').value.trim();
 
@@ -83,58 +181,102 @@
 
             // UI Switch
             searchContainer.style.display = 'none';
+            newSearchContainer.style.display = 'block';
             progressView.style.display = 'block';
             progressList.innerHTML = '';
+            liveResultsQueue.innerHTML = '';
             statusText.innerText = "CONECTANDO CON LA BASE DE DATOS...";
             profileInfo.style.display = 'none';
 
+            let jobId = null;
+            try {
+                const resp = await fetch('/api/start_check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ steam_input: inputVal })
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    statusText.innerText = "ERROR AL INICIAR ESCANEO";
+                    const li = document.createElement('li');
+                    li.style.color = 'red';
+                    li.innerHTML = `❌ ${escapeHtml(data.error)}`;
+                    progressList.appendChild(li);
+                    return;
+                }
+                jobId = data.job_id;
+            } catch (err) {
+                console.error("Fetch Error:", err);
+                jobId = encodeURIComponent(inputVal);
+            }
+
             // Start Stream
-            // Encode input to be safe for URL
-            const evtSource = new EventSource("/stream_check/" + encodeURIComponent(inputVal));
+            const evtSource = new EventSource("/stream_check/" + jobId);
 
             evtSource.onmessage = function (e) {
                 const data = JSON.parse(e.data);
 
                 if (data.type === 'info') {
-                    // Show Profile Data
                     if (data.name) {
                         profileName.innerText = data.name;
-                        if (data.avatar) profileAvatar.src = data.avatar;
-                        else profileAvatar.style.display = 'none';
-
+                        if (data.avatar) {
+                            profileAvatar.src = data.avatar;
+                            profileAvatar.style.display = 'inline-block';
+                        } else {
+                            profileAvatar.style.display = 'none';
+                        }
                         profileInfo.style.display = 'block';
                         statusText.innerText = "BUSCANDO INFECCIONES...";
                     }
                 } else if (data.type === 'progress') {
                     const li = document.createElement('li');
-                    li.innerHTML = `<span class="check-icon" style="color: yellow;">➜</span> ${data.msg}`;
+                    li.innerHTML = `<span class="check-icon" style="color: yellow;">➜</span> ${escapeHtml(data.msg)}`;
                     progressList.appendChild(li);
                 } else if (data.type === 'success') {
                     const li = document.createElement('li');
                     li.style.color = '#44ff44';
-                    li.innerHTML = `<span class="check-icon">✔</span> ${data.msg}`;
+                    li.innerHTML = `<span class="check-icon">✔</span> ${escapeHtml(data.msg)}`;
                     progressList.appendChild(li);
                 } else if (data.type === 'error') {
                     const li = document.createElement('li');
                     li.style.color = 'red';
-                    li.innerHTML = `❌ ${data.msg}`;
+                    li.innerHTML = `❌ ${escapeHtml(data.msg)}`;
                     progressList.appendChild(li);
                     evtSource.close();
-                } else if (data.type === 'redirect') {
-                    console.log("Redirect received:", data.url);
+                } else if (data.type === 'player_result') {
+                    if (data.player) {
+                        if (liveResultsQueue.children.length > 0) {
+                            const hr = document.createElement('hr');
+                            hr.className = 'player-separator';
+                            liveResultsQueue.appendChild(hr);
+                        }
+                        const card = createPlayerCard(data.player);
+                        liveResultsQueue.appendChild(card);
+                    }
+                } else if (data.type === 'complete' || data.type === 'redirect') {
+                    statusText.innerText = "✅ ESCANEO COMPLETADO";
+                    statusText.style.color = "#44ff44";
+                    profileInfo.style.display = 'none';
+
+                    if (data.url) {
+                        try {
+                            window.history.pushState({}, '', data.url);
+                        } catch (err) {
+                            console.log("pushState error", err);
+                        }
+                    }
+
                     const li = document.createElement('li');
-                    li.style.color = '#ffff00';
-                    li.innerHTML = `🚀 REDIRIGIENDO A RESULTADOS...`;
+                    li.style.color = '#44ff44';
+                    li.innerHTML = `🎉 Todos los jugadores y smurfs han sido analizados con éxito.`;
                     progressList.appendChild(li);
 
-                    window.location.href = data.url;
                     evtSource.close();
                 }
             };
 
             evtSource.onerror = function (e) {
                 console.error("Stream Error", e);
-                // Optionally show error if not closed manually
                 evtSource.close();
             };
         });

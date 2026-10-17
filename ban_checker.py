@@ -18,7 +18,7 @@ SOURCES = [
     },
     {
         "name": "SirPlease",
-        "url": "https://sirplease.vercel.app/api/bans",
+        "url": "https://sirplease.net/api/bans",
         "type": "custom_sirplease"
     },
     {
@@ -224,19 +224,13 @@ class BanChecker:
 
     def check_sirplease_custom(self, base_url, steam_id):
         """
-        Fetches SirPlease bans using their hidden API: https://sirplease.vercel.app/api/bans
+        Fetches SirPlease bans using their API: https://sirplease.net/api/bans
         Critically: The API uses SteamID2 format (STEAM_1:x:y), NOT SteamID64.
-        We must calculate the SteamID2 from the 64-bit ID to find the record.
+        We calculate the SteamID2 from the 64-bit ID and use the search query param.
         """
-        api_url = "https://sirplease.vercel.app/api/bans"
-        print(f"[*] Verificando SirPlease (API): {api_url}")
+        api_url = "https://sirplease.net/api/bans"
 
-        # Convert SteamID64 to SteamID2
-        # Formula:
-        # W = Z * 2 + Y
-        # Y = W % 2
-        # Z = (W - Y) / 2 
-        # Base: 76561197960265728
+        # Calculate y and z from steam_id (SteamID64, base 76561197960265728)
         try:
             sid64_int = int(steam_id)
             base_num = 76561197960265728
@@ -244,64 +238,103 @@ class BanChecker:
                 w = sid64_int - base_num
                 y = w % 2
                 z = (w - y) // 2
-                # Standard format usually uses universe 1 for these accounts
-                # Try both STEAM_0 and STEAM_1 just in case, but usually STEAM_1
+                steam_suffix = f"{y}:{z}"
                 steam2_variants = [f"STEAM_1:{y}:{z}", f"STEAM_0:{y}:{z}"]
             else:
-                steam2_variants = [steam_id] # Should not happen if valid 64
+                steam_suffix = steam_id
+                steam2_variants = [steam_id]
         except:
-             steam2_variants = [steam_id]
+            steam_suffix = steam_id
+            steam2_variants = [steam_id]
 
-        print(f"[*] Buscando variantes: {steam2_variants}")
+        print(f"[*] Verificando SirPlease (API): {api_url} con búsqueda: {steam_suffix}")
 
         try:
-            # Fetch all bans (API seems to return full list ~400 items)
-            # Query params like ?search= exist but might fail if format differs. 
-            # Safe bet: Fetch all and filter in Python.
-            resp = self.session.get(api_url, timeout=10)
+            resp = self.session.get(api_url, params={"search": steam_suffix}, timeout=10)
             if resp.status_code != 200:
-                return {"source": "SirPlease", "error": f"API Error {resp.status_code}"}
-            
+                return {
+                    "source": "SirPlease",
+                    "error": f"API Error {resp.status_code}",
+                    "status": "Error",
+                    "history": [],
+                    "manual_check_url": f"https://sirplease.net/bans?search={steam2_variants[0]}",
+                    "related_ids": []
+                }
+
             json_resp = resp.json()
             if not json_resp.get("success"):
-                 return {"source": "SirPlease", "error": "API response not success"}
-            
+                return {
+                    "source": "SirPlease",
+                    "error": "API response not success",
+                    "status": "Error",
+                    "history": [],
+                    "manual_check_url": f"https://sirplease.net/bans?search={steam2_variants[0]}",
+                    "related_ids": []
+                }
+
             ban_list = json_resp.get("data", [])
             found_bans = []
             player_name = "Unknown"
+            related_steam2_ids = set()
 
             for ban in ban_list:
-                # ban['steam_id'] is e.g. "STEAM_1:1:593455009"
                 b_sid = ban.get("steam_id", "")
-                
+                reason = ban.get("reason", "Unknown")
+
+                # Match a ban record if b_sid in steam2_variants OR if steam_suffix in reason (or any variant in steam2_variants is in reason)
+                if not (b_sid in steam2_variants or steam_suffix in reason or any(v in reason for v in steam2_variants)):
+                    continue
+
                 if b_sid in steam2_variants:
                     player_name = ban.get("player_name") or ban.get("name", "Unknown")
-                    reason = ban.get("reason", "Unknown")
-                    duration = ban.get("duration", 0) 
-                    status_str = ban.get("status", "Banned")
-                    created = ban.get("ban_date", "")
-                    
-                    details = f"[{created[:10]}] {reason} (Status: {status_str})"
-                    if duration == 0:
-                        details += " [Permanent]"
-                    else:
-                        details += f" [Duration: {duration}m]"
-                        
-                    found_bans.append(details)
+
+                duration = ban.get("duration", 0)
+                status_str = ban.get("status", "Banned")
+                created = ban.get("ban_date", "")
+
+                details = f"[{created[:10]}] {reason} (Status: {status_str})"
+                if duration == 0:
+                    details += " [Permanent]"
+                else:
+                    details += f" [Duration: {duration}m]"
+
+                if b_sid not in steam2_variants:
+                    details += f" (Linked Account: {b_sid} - {ban.get('player_name', 'Unknown')})"
+
+                found_bans.append(details)
+
+                # Collect any STEAM_[01]:[01]:\d+ found in b_sid or ban.get("reason", "") (not in steam2_variants)
+                for candidate in re.findall(r"STEAM_[01]:[01]:\d+", f"{b_sid} {reason}"):
+                    if candidate not in steam2_variants:
+                        related_steam2_ids.add(candidate)
 
             if found_bans:
                 return {
                     "source": "SirPlease",
                     "status": "Found Records",
                     "history": found_bans,
-                    "manual_check_url": f"https://sirplease.vercel.app/bans?search={steam_id}", # Keep web url for user
-                    "player_name": player_name
+                    "manual_check_url": f"https://sirplease.net/bans?search={steam2_variants[0]}",
+                    "player_name": player_name,
+                    "related_ids": list(related_steam2_ids)
                 }
-            
-            return {"source": "SirPlease", "status": "Clean", "history": []}
+
+            return {
+                "source": "SirPlease",
+                "status": "Clean",
+                "history": [],
+                "manual_check_url": f"https://sirplease.net/bans?search={steam2_variants[0]}",
+                "related_ids": []
+            }
 
         except Exception as e:
-            return {"source": "SirPlease", "error": f"Request Error: {str(e)}"}
+            return {
+                "source": "SirPlease",
+                "error": f"Request Error: {str(e)}",
+                "status": "Error",
+                "history": [],
+                "manual_check_url": f"https://sirplease.net/bans?search={steam2_variants[0]}",
+                "related_ids": []
+            }
 
     def check_l4d2center(self, base_url, steam_id):
         """

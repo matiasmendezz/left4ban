@@ -37,6 +37,7 @@ SOURCES = [
 class BanChecker:
     def __init__(self, api_key=None):
         self.api_key = api_key
+        self._browser_page = None
         # Use cloudscraper with browser emulation
         self.session = cloudscraper.create_scraper(
             browser={
@@ -48,6 +49,62 @@ class BanChecker:
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         })
+
+    def _get_browser_page(self):
+        """
+        Returns an active ChromiumPage configured with silent headless/minimized flags.
+        Reuses the existing page instance if alive, otherwise launches a new one.
+        """
+        if self._browser_page is not None:
+            try:
+                _ = self._browser_page.title
+                return self._browser_page
+            except Exception:
+                try:
+                    self._browser_page.quit()
+                except Exception:
+                    pass
+                self._browser_page = None
+
+        from DrissionPage import ChromiumPage, ChromiumOptions
+
+        co = ChromiumOptions()
+        co.auto_port()
+
+        force_headed = os.getenv("FORCE_HEADED", "false").lower() == "true"
+        if not force_headed:
+            co.set_argument('--headless=new')
+
+        co.set_argument('--disable-blink-features=AutomationControlled')
+        co.set_argument('--no-sandbox')
+        co.set_argument('--disable-gpu')
+        co.set_argument('--disable-dev-shm-usage')
+        co.set_argument('--mute-audio')
+        co.set_argument('--window-size=1920,1080')
+        co.set_argument('--window-position=-32000,-32000')
+        co.set_argument('--start-minimized')
+
+        for candidate_path in ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable']:
+            if os.path.exists(candidate_path):
+                co.set_browser_path(candidate_path)
+                break
+
+        co.set_user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+        self._browser_page = ChromiumPage(co)
+        return self._browser_page
+
+    def close_browser(self):
+        """
+        Gracefully closes the reused browser instance if active.
+        """
+        if self._browser_page is not None:
+            try:
+                self._browser_page.quit()
+            except Exception:
+                pass
+            finally:
+                self._browser_page = None
 
     def resolve_steam_id(self, input_str):
         """
@@ -162,6 +219,29 @@ class BanChecker:
             return f"STEAM_1:{y}:{x}"
         except:
             return steam_id64
+
+    def steam2_to_steam64(self, steam2_str):
+        """
+        Converts SteamID2 (STEAM_0:Y:Z or STEAM_1:Y:Z) to SteamID64 string.
+        Formula: 76561197960265728 + (Z * 2) + Y
+        """
+        m = re.search(r'STEAM_[01]:([01]):(\d+)', steam2_str, re.IGNORECASE)
+        if m:
+            y = int(m.group(1))
+            z = int(m.group(2))
+            return str(76561197960265728 + (z * 2) + y)
+        return None
+
+    def steam3_to_steam64(self, steam3_str):
+        """
+        Converts SteamID3 ([U:1:W] or U:1:W) to SteamID64 string.
+        Formula: 76561197960265728 + W
+        """
+        m = re.search(r'\[?U:1:(\d+)\]?', steam3_str, re.IGNORECASE)
+        if m:
+            w = int(m.group(1))
+            return str(76561197960265728 + w)
+        return None
 
     def check_steam_official(self, steam_id):
         """
@@ -339,226 +419,198 @@ class BanChecker:
     def check_l4d2center(self, base_url, steam_id):
         """
         Scraper for L4D2Center using DrissionPage (Browser Automation)
-        to bypass Cloudflare protection.
-        Restored: Manual Navigation + Type Search (More robust against CF).
+        to bypass Cloudflare protection with reused silent headless session.
         """
         if base_url.endswith("/bans"):
-             search_link = f"{base_url}/?search={steam_id}"
+            search_link = f"{base_url}/?search={steam_id}"
         else:
-             search_link = f"{base_url}/bans/?search={steam_id}"
+            search_link = f"{base_url}/bans/?search={steam_id}"
 
-        print(f"[*] Verificando L4D2Center (Browser Interaction): {base_url} -> Search")
+        steam2_id = self.steam64_to_id2(steam_id)
+        try:
+            sid64_int = int(steam_id)
+            base_num = 76561197960265728
+            if sid64_int > base_num:
+                w = sid64_int - base_num
+                y = w % 2
+                z = (w - y) // 2
+                steam_suffix = f"{y}:{z}"
+            else:
+                steam_suffix = steam_id
+        except Exception:
+            steam_suffix = steam_id
+
+        print(f"[*] Verificando L4D2Center (Browser Interaction): {base_url} -> Search {steam_id}")
 
         page = None
         try:
-            import os
-            from DrissionPage import ChromiumPage, ChromiumOptions
-            
-            co = ChromiumOptions()
-            co.auto_port()
-            
-            # Check for Docker/Headless env
-            is_headless = os.getenv("HEADLESS", "false").lower() == "true"
-            
-            if is_headless:
-                print("[*] Running in DOCKER mode with XVFB (Virtual Screen)...")
-                # Important: valid HEADED mode to bypass Cloudflare
-                co.headless(False) 
-                co.set_argument('--no-sandbox')
-                co.set_argument('--disable-gpu')
-                co.set_argument('--disable-dev-shm-usage')
-                
-                # Explicitly set chromium path for Debian/Docker
-                # In python:3.11-slim-bookworm + apt install chromium, it is usually here:
-                co.set_browser_path('/usr/bin/chromium')
-                
-                # Anti-detection
-                co.set_argument('--disable-blink-features=AutomationControlled')
-                # MATCH OS: Use Linux UA for Docker (Render is Linux)
-                co.set_user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                
-                print("[*] Chromium path set to /usr/bin/chromium")
-            else:
-                co.headless(False)
-                co.set_argument('--window-position=-10000,0') 
+            page = self._get_browser_page()
 
-            co.set_argument('--window-size=1920,1080')
-            
-            page = ChromiumPage(co)
-            
-            # 1. Go to main bans page
+            # Target URL
             target_url = base_url
             if not target_url.endswith("/bans") and not target_url.endswith("/bans/"):
-                 target_url = f"{target_url}/bans"
-            
-            page.get(target_url)
-            
+                target_url = f"{target_url}/bans"
+
+            current_url = getattr(page, 'url', '') or ''
+            if not current_url.startswith(target_url):
+                page.get(target_url)
+
             import time
             import random
-            
-            # Wait for Cloudflare on initial load
+
+            # Wait for Cloudflare on initial load if needed
             print(f"[*] Loading page: {target_url} ...")
             for i in range(25):
                 title = page.title.lower() if page.title else "no-title"
                 print(f"[DEBUG] Check {i}: Title='{title}'")
-                
-                # Human simulation: Random mouse moves
-                try: 
-                    page.actions.move(random.randint(100, 500), random.randint(100, 500), duration=0.2)
-                except: 
-                    pass
-                
-                # Try to find specific Cloudflare iframe/checkbox if implied
+
                 try:
-                    # Generic attempt to click any visible checkbox in probable turnstile frames
+                    page.actions.move(random.randint(100, 500), random.randint(100, 500), duration=0.2)
+                except Exception:
+                    pass
+
+                try:
                     if "just a moment" in title:
                         frames = page.eles("tag:iframe")
                         for f in frames:
-                             try:
-                                 # blind click in center of iframe
-                                 box = f.rect
-                                 if box:
-                                     cx = box.location[0] + box.size[0]/2
-                                     cy = box.location[1] + box.size[1]/2
-                                     page.actions.move(cx, cy).click()
-                             except: pass
-                except: pass
+                            try:
+                                box = f.rect
+                                if box:
+                                    cx = box.location[0] + box.size[0] / 2
+                                    cy = box.location[1] + box.size[1] / 2
+                                    page.actions.move(cx, cy).click()
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
 
                 if "just a moment" not in title and "cloudflare" not in title and "checking" not in title:
-                     # Check for search box presence
-                     if page.ele("css:input[name='search']") or page.ele("css:input[type='text']"):
-                         print("[DEBUG] Search box found! Cloudflare passed.")
-                         break
+                    if page.ele("css:input[name='search']") or page.ele("css:input[type='text']"):
+                        print("[DEBUG] Search box found! Cloudflare passed.")
+                        break
                 time.sleep(1)
             else:
-                 # Loop finished without break -> Timeout
-                 print("[!] Timeout waiting for Cloudflare.")
-                 if page: page.quit()
-                 return {
+                print("[!] Timeout waiting for Cloudflare.")
+                return {
                     "source": "L4D2Center",
                     "status": "Protected (Cloudflare)",
                     "history": ["No se pudo verificar automáticamente (Captcha). Revisa el link manual."],
-                    "manual_check_url": search_link
-                 }
-            
-            # 2. Interact
+                    "manual_check_url": search_link,
+                    "related_ids": []
+                }
+
+            # Interact with search box
             try:
                 search_box = page.ele("css:input[placeholder*='Search']") or page.ele("css:input[name='search']")
                 if search_box:
                     print("[*] L4D2Center: Typing SteamID manually...")
                     search_box.clear()
                     search_box.input(steam_id)
-                    page.actions.send_keys('\ue007') # Press Enter
-                    
-                    # Wait for results
+                    page.actions.send_keys('')  # Press Enter
+
                     time.sleep(1)
                     for k in range(10):
-                         html_now = page.html.lower()
-                         # Check if results updated (ID matches) or empty message
-                         if steam_id in html_now and ("reason" in html_now or "expira" in html_now or "permanent" in html_now):
-                              break
-                         if "no bans found" in html_now:
-                              break
-                         time.sleep(1)
+                        html_now = page.html.lower()
+                        if (steam_id in html_now or steam2_id.lower() in html_now or steam_suffix in html_now) and ("reason" in html_now or "expira" in html_now or "permanent" in html_now):
+                            break
+                        if "no bans found" in html_now or "0 bans" in html_now:
+                            break
+                        time.sleep(1)
                 else:
                     print("[!] Search box not found, trying fallback URL navigate...")
                     page.get(search_link)
                     time.sleep(4)
-                    
             except Exception as e:
                 print(f"[!] Interaction error: {e}, falling back to URL.")
                 page.get(search_link)
                 time.sleep(4)
-            
+
             html_content = page.html
-            page.quit() 
-            
             soup = BeautifulSoup(html_content, "lxml")
-            
-            # Check protections
+
             text_lower = soup.get_text(" ", strip=True).lower()
             if "checking your browser" in text_lower or "enable javascript" in text_lower:
-                 return {
+                return {
                     "source": "L4D2Center",
                     "status": "Protected (Cloudflare)",
                     "history": ["No se pudo evadir la protección."],
-                    "manual_check_url": search_link
+                    "manual_check_url": search_link,
+                    "related_ids": []
                 }
-            
+
             if "no bans found" in text_lower or "0 bans" in text_lower:
-                 return {"source": "L4D2Center", "status": "Clean", "history": []}
-            
+                return {"source": "L4D2Center", "status": "Clean", "history": [], "manual_check_url": search_link, "related_ids": []}
+
             history = []
             found_nickname = "Unknown"
-            # Try to find the results table
-            # Based on image: standard table structure
+            related_ids = set()
+
             rows = soup.find_all("tr")
             for row in rows:
                 cols = row.find_all("td")
-                if not cols: 
+                if not cols:
                     continue
-                
-                # Check if this row belongs to the user (contains SteamID)
-                # or if we assume all rows are relevant in this search view
+
                 row_text = row.get_text()
-                if steam_id in row_text:
+                match_id = (steam_id in row_text) or (steam2_id in row_text) or (steam_suffix in row_text)
+                if match_id:
                     try:
-                        # 0: Nickname, 1: SteamID, ...
                         if len(cols) > 0:
-                             found_nickname = cols[0].get_text(strip=True)
-                        
-                        # ... rest of parsing ...
-                        unban_str = cols[3].get_text(strip=True)
-                        reason = cols[4].get_text(strip=True)
-                        if not reason:
-                             reason = "Unknown" 
-                        
-                        desc = ""
-                        if len(cols) > 5:
-                            desc = cols[5].get_text(strip=True)
-                        
+                            found_nickname = cols[0].get_text(strip=True)
+
+                        unban_str = cols[3].get_text(strip=True) if len(cols) > 3 else ""
+                        reason = cols[4].get_text(strip=True) if len(cols) > 4 else "Unknown"
+                        desc = cols[5].get_text(strip=True) if len(cols) > 5 else ""
+
                         ban_info = f"Reason: {reason}"
                         if desc:
                             ban_info += f" | Desc: {desc}"
-                        ban_info += f" | Expira: {unban_str}"
-                        
+                        if unban_str:
+                            ban_info += f" | Expira: {unban_str}"
+
                         history.append(ban_info)
-                    except:
-                        history.append(row_text[:100])
+                    except Exception:
+                        history.append(row_text)
+
+                    # Extract any related steam IDs in this matched row text
+                    for cand in re.findall(r'7656\d{13}|STEAM_[01]:[01]:\d+|\[?U:1:\d+\]?', row_text, re.IGNORECASE):
+                        if cand != steam_id and cand != steam2_id and steam_suffix not in cand:
+                            related_ids.add(cand)
 
             if history:
-                 # Extract name from first row if available
-                 return {
+                return {
                     "source": "L4D2Center",
                     "status": "Found Records",
                     "history": history,
                     "manual_check_url": search_link,
-                    "player_name": found_nickname # Capture this
-                 }
+                    "player_name": found_nickname,
+                    "related_ids": list(related_ids)
+                }
 
-            # Fallback text search if table parsing failed but ID is there
-            if steam_id in html_content:
-                 return {
+            if steam_id in html_content or steam2_id in html_content:
+                for cand in re.findall(r'7656\d{13}|STEAM_[01]:[01]:\d+|\[?U:1:\d+\]?', html_content, re.IGNORECASE):
+                    if cand != steam_id and cand != steam2_id and steam_suffix not in cand:
+                        related_ids.add(cand)
+                return {
                     "source": "L4D2Center",
                     "status": "Found Records",
                     "history": ["Registro detectado (No se pudieron leer detalles)."],
-                    "manual_check_url": search_link
-                 }
+                    "manual_check_url": search_link,
+                    "related_ids": list(related_ids)
+                }
 
-            # If not found, and no error -> Clean
-            # NOTE: "No bans found" might strictly be for empty searches.
-            # If checking arbitrary ID, it might just be empty list.
-            return {"source": "L4D2Center", "status": "Clean", "history": []}
+            return {"source": "L4D2Center", "status": "Clean", "history": [], "manual_check_url": search_link, "related_ids": []}
 
         except Exception as e:
             print(f"[ERROR] L4D2Center Failed: {e}")
-            if page: 
-                try: page.quit()
-                except: pass
+            self.close_browser()
             return {
                 "source": "L4D2Center",
-                "error": f"Browser Error: {str(e)}", 
-                "manual_check_url": search_link
+                "error": f"Browser Error: {str(e)}",
+                "status": "Error",
+                "history": [],
+                "manual_check_url": search_link,
+                "related_ids": []
             }
 
     def check_cedapug(self, base_url, steam_id):
@@ -645,48 +697,84 @@ class BanChecker:
             "results": [ {source, status, history: []}, ... ]
         }
         """
-        steam_id = self.resolve_steam_id(input_check)
-        if not steam_id:
-            return None
+        try:
+            steam_id = self.resolve_steam_id(input_check)
+            if not steam_id:
+                return None
 
-        # Collect results
-        results_list = []
+            results_list = []
 
-        for source in SOURCES:
-            if source["type"] == "steam_official":
-                res = self.check_steam_official(steam_id)
-            elif source["type"] == "l4d2center_api" or source["name"] == "L4D2Center":
-                res = self.check_l4d2center(source["url"], steam_id)
-            elif source["type"] == "cedapug_scrape":
-                res = self.check_cedapug(source["url"], steam_id)
-            elif source["type"] == "custom_sirplease":
-                res = self.check_sirplease_custom(source["url"], steam_id)
-            else:
-                res = {"source": source["name"], "status": "Skipped", "history": []}
-            results_list.append(res)
-            
-        return {
-            "steam_id": steam_id,
-            "results": results_list
-        }
+            for source in SOURCES:
+                if source["type"] == "steam_official":
+                    res = self.check_steam_official(steam_id)
+                elif source["type"] == "l4d2center_api" or source["name"] == "L4D2Center":
+                    res = self.check_l4d2center(source["url"], steam_id)
+                elif source["type"] == "cedapug_scrape":
+                    res = self.check_cedapug(source["url"], steam_id)
+                elif source["type"] == "custom_sirplease":
+                    res = self.check_sirplease_custom(source["url"], steam_id)
+                else:
+                    res = {"source": source["name"], "status": "Skipped", "history": []}
+                results_list.append(res)
 
-    # Helper to find related IDs in ban history text
-    def _extract_related_ids(self, results):
-        related = set()
+            return {
+                "steam_id": steam_id,
+                "results": results_list
+            }
+        finally:
+            self.close_browser()
+
+    def _extract_related_ids(self, results, current_id=None):
+        """
+        Universal smurf extractor: scans all history entries and related_ids lists.
+        Extracts SteamID64, SteamID2 (converted), SteamID3 (converted), profile URLs, and vanity URLs.
+        Returns a deduplicated list of 17-digit SteamID64 strings, excluding current_id.
+        """
+        discovered = []
+        seen = set()
+
+        def add_candidate(cand):
+            if cand and isinstance(cand, str):
+                cand = cand.strip()
+                if cand != current_id and re.match(r'^\d{17}$', cand):
+                    if cand not in seen:
+                        seen.add(cand)
+                        discovered.append(cand)
+
         for source in results:
-            if "history" in source:
-                for record in source["history"]:
-                    # Pattern 1: "Duplicate of banned account (STEAM_... or 765...)"
-                    match = re.search(r"Duplicate of banned account \((\d{17})\)", record)
-                    if match:
-                        related.add(match.group(1))
-                    
-                    # Pattern 2: "only allowed to play from: 765...,765..."
-                    if "only allowed to play from" in record.lower():
-                         ids = re.findall(r"7656\d{13}", record)
-                         for i in ids:
-                             related.add(i)
-        return related
+            texts = []
+            if "history" in source and isinstance(source["history"], list):
+                texts.extend(source["history"])
+            if "related_ids" in source and isinstance(source["related_ids"], list):
+                texts.extend(source["related_ids"])
+
+            for text in texts:
+                if not isinstance(text, str):
+                    continue
+
+                # 1. steamcommunity.com/profiles/(7656\d{13})
+                for prof_id in re.findall(r'steamcommunity\.com/profiles/(7656\d{13})', text):
+                    add_candidate(prof_id)
+
+                # 2. steamcommunity.com/id/([a-zA-Z0-9_-]+)
+                for vanity in re.findall(r'steamcommunity\.com/id/([a-zA-Z0-9_-]+)', text):
+                    resolved = self._resolve_vanity_xml(vanity)
+                    if resolved:
+                        add_candidate(resolved)
+
+                # 3. STEAM_[01]:[01]:\d+ -> convert to 64
+                for s2 in re.findall(r'STEAM_[01]:[01]:\d+', text, re.IGNORECASE):
+                    add_candidate(self.steam2_to_steam64(s2))
+
+                # 4. \[?U:1:\d+\]? -> convert to 64
+                for s3 in re.findall(r'\[?U:1:\d+\]?', text, re.IGNORECASE):
+                    add_candidate(self.steam3_to_steam64(s3))
+
+                # 5. 7656\d{13}
+                for s64 in re.findall(r'7656\d{13}', text):
+                    add_candidate(s64)
+
+        return discovered
 
     def get_live_steam_details(self, steam_id):
         """
@@ -720,97 +808,110 @@ class BanChecker:
         Yields: {"type": "progress"|"complete"|"error"|"info", "msg": "...", "result": data}
         """
         yield {"type": "progress", "msg": f"Resolviendo Steam ID: {start_input}..."}
-        
+
         start_id = self.resolve_steam_id(start_input)
         if not start_id:
-              yield {"type": "error", "msg": "No se pudo resolver el Steam ID. Verifique la URL/ID."}
-              return
-        
+            yield {"type": "error", "msg": "No se pudo resolver el Steam ID. Verifique la URL/ID."}
+            return
+
         yield {"type": "progress", "msg": f"ID Resuelto: {start_id}"}
-        
-        # Initial setup
+
         visited = set()
-        queue = [start_id]
-        
-        all_players_data = [] 
-        
-        while queue:
-            current_id = queue.pop(0)
-            if current_id in visited:
-                continue
-            
-            visited.add(current_id)
-            
-            # --- START PER-ACCOUNT PROCESSING ---
-            
-            # 1. Fetch Profile Details (Avatar, Name)
-            yield {"type": "progress", "msg": "Obteniendo datos de perfil..."}
-            details = self.get_live_steam_details(current_id)
-            name = details.get("name", "Unknown") if details else "Unknown"
-            avatar = details.get("avatar", "") if details else ""
-            
-            # Send INFO update to UI (For main account or Smurf)
-            # If it's a smurf, the UI might handle it differently or just update the "Scanning..." card
-            yield {"type": "info", "msg": f"Analizando a: {name}", "avatar": avatar, "name": name, "steam_id": current_id}
+        queued_ids = {start_id}
+        queue = [{"steam_id": start_id, "is_smurf": False, "smurf_of": None, "smurf_of_name": None}]
 
-            if current_id != start_id:
-                 yield {"type": "progress", "msg": f"🔍 Analizando Smurf: {name} ({current_id})..."}
-            else:
-                 yield {"type": "progress", "msg": f"Analizando cuenta principal: {current_id}..."}
-            
-            bans_found = []
-            
-            for source in SOURCES:
-                 s_name = source["name"]
-                 yield {"type": "progress", "msg": f"Consultando {s_name}..."}
-                 
-                 res = {}
-                 try:
-                    if source["type"] == "steam_official":
-                        res = self.check_steam_official(current_id)
-                    elif source["type"] == "l4d2center_api":
-                        # Add extra notification since this is slow
-                        res = self.check_l4d2center(source["url"], current_id)
-                    elif source["type"] == "cedapug_scrape":
-                        res = self.check_cedapug(source["url"], current_id)
-                    elif source["type"] == "custom_sirplease":
-                        res = self.check_sirplease_custom(source["url"], current_id)
+        all_players_data = []
+
+        try:
+            while queue:
+                item = queue.pop(0)
+                current_id = item["steam_id"]
+                if current_id in visited:
+                    continue
+
+                visited.add(current_id)
+
+                # --- START PER-ACCOUNT PROCESSING ---
+
+                # 1. Fetch Profile Details (Avatar, Name)
+                yield {"type": "progress", "msg": "Obteniendo datos de perfil..."}
+                details = self.get_live_steam_details(current_id)
+                name = details.get("name", "Unknown") if details else "Unknown"
+                avatar = details.get("avatar", "") if details else ""
+
+                yield {"type": "info", "msg": f"Analizando a: {name}", "avatar": avatar, "name": name, "steam_id": current_id}
+
+                if item["is_smurf"]:
+                    smurf_origin = item["smurf_of_name"] or item["smurf_of"]
+                    yield {"type": "progress", "msg": f"🔍 Analizando Smurf vinculado a {smurf_origin}: {name} ({current_id})..."}
+                else:
+                    yield {"type": "progress", "msg": f"Analizando cuenta principal: {current_id}..."}
+
+                bans_found = []
+
+                for source in SOURCES:
+                    s_name = source["name"]
+                    yield {"type": "progress", "msg": f"Consultando {s_name}..."}
+
+                    res = {}
+                    try:
+                        if source["type"] == "steam_official":
+                            res = self.check_steam_official(current_id)
+                        elif source["type"] == "l4d2center_api":
+                            res = self.check_l4d2center(source["url"], current_id)
+                        elif source["type"] == "cedapug_scrape":
+                            res = self.check_cedapug(source["url"], current_id)
+                        elif source["type"] == "custom_sirplease":
+                            res = self.check_sirplease_custom(source["url"], current_id)
+                        else:
+                            res = {"source": s_name, "status": "Unknown", "history": []}
+                    except Exception as e:
+                        res = {"source": s_name, "status": "Error", "history": [str(e)]}
+
+                    if res.get("status") in ["Found Records", "Banned", "BANNED"]:
+                        yield {"type": "progress", "msg": f"⚠️ {s_name}: ¡ENCONTRADO!"}
                     else:
-                        res = {"source": s_name, "status": "Unknown", "history": []}
-                 except Exception as e:
-                     res = {"source": s_name, "status": "Error", "history": [str(e)]}
+                        yield {"type": "success", "msg": f"{s_name}: Limpio"}
 
-                 if res.get("status") in ["Found Records", "Banned", "BANNED"]:
-                       yield {"type": "progress", "msg": f"⚠️ {s_name}: ¡ENCONTRADO!"}
-                 else:
-                       yield {"type": "success", "msg": f"{s_name}: Limpio"}
-                 
-                 bans_found.append(res)
-                 
-            # Construct player object
-            player_data = {
-                "steam_id": current_id,
-                "profile_url": f"https://steamcommunity.com/profiles/{current_id}",
-                "player_name": name, # Now redundant but kept for structure
-                "results": bans_found,
-                "avatar": avatar # Important for Results Page
-            }
-            
-            # Simple smurf extraction placeholder
-            detected_ids = self._extract_related_ids(bans_found)
-            for rid in detected_ids:
-                 if rid not in visited and rid not in queue:
-                      queue.append(rid)
-                      yield {"type": "progress", "msg": f"Cola: Posible Smurf {rid}"}
+                    bans_found.append(res)
 
-            all_players_data.append(player_data)
-            
-            # Limit to prevent infinite loop
-            if len(all_players_data) >= 3: 
-                 yield {"type": "progress", "msg": "Límite de profundidad (3 cuentas) alcanzado."}
-                 break
+                # Fallback for player name if Steam profile was private/unknown
+                if name in ["Unknown", "[Privado/Error]", None, ""]:
+                    for b in bans_found:
+                        p_name = b.get("player_name")
+                        if p_name and p_name not in ["Unknown", "[Privado/Error]", ""]:
+                            name = p_name
+                            break
 
-        yield {"type": "complete", "result": all_players_data}
+                # Smurf detection & queueing
+                detected_ids = self._extract_related_ids(bans_found, current_id=current_id)
+                for rid in detected_ids:
+                    if rid not in visited and rid not in queued_ids:
+                        queued_ids.add(rid)
+                        queue.append({
+                            "steam_id": rid,
+                            "is_smurf": True,
+                            "smurf_of": current_id,
+                            "smurf_of_name": name
+                        })
+                        yield {"type": "progress", "msg": f"🔗 Smurf detectado en historial de {name}: {rid} (añadido a la cola)"}
+
+                # Construct player object
+                player_data = {
+                    "steam_id": current_id,
+                    "profile_url": f"https://steamcommunity.com/profiles/{current_id}",
+                    "player_name": name,
+                    "results": bans_found,
+                    "avatar": avatar,
+                    "is_smurf": item["is_smurf"],
+                    "smurf_of": item["smurf_of"],
+                    "smurf_of_name": item["smurf_of_name"]
+                }
+                all_players_data.append(player_data)
+
+            yield {"type": "complete", "result": all_players_data}
+        finally:
+            self.close_browser()
 
     def get_all_bans(self, start_input):
         # Wrapper for legacy compatibility

@@ -445,3 +445,101 @@ input[type="text"]:focus, textarea#steam-input:focus {
     color: #aaa;
     text-align: left;
 }
+
+/* Lobby Toolbar */
+.lobby-toolbar {
+    background: #161616;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 12px 20px;
+    margin-bottom: 25px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+}
+
+.lobby-counters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.counter-pill {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-family: var(--font-mono);
+    font-weight: bold;
+    background: #222;
+    border: 1px solid #444;
+    color: #ccc;
+}
+
+.counter-pill.pill-total {
+    background: #252525;
+    color: #fff;
+    border-color: #555;
+}
+
+.counter-pill.pill-banned {
+    background: #4a1515;
+    color: #ffcccc;
+    border-color: #d32f2f;
+}
+
+.counter-pill.pill-warning {
+    background: #452700;
+    color: #fde68a;
+    border-color: #f59e0b;
+}
+
+.counter-pill.pill-smurf {
+    background: #3e2723;
+    color: #ffccbc;
+    border-color: #d35400;
+}
+
+.counter-pill.pill-clean {
+    background: #0d2818;
+    color: #ccffcc;
+    border-color: #2e7d32;
+}
+
+.toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.btn-tool {
+    background: #222;
+    border: 1px solid #444;
+    color: #ddd;
+    padding: 6px 14px;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.btn-tool:hover {
+    background: #333;
+    color: #fff;
+    border-color: #666;
+}
+
+.btn-tool.active {
+    background: #452700;
+    color: #fde68a;
+    border-color: #f59e0b;
+}
+
+/* Autoban filter hiding */
+.hide-autobans li.autoban-entry {
+    display: none !important;
+}

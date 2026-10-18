@@ -18,7 +18,7 @@
 
     <div class="container results-screen">
         <header class="main-header"
-            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; border-bottom: 2px solid #333; padding-bottom: 20px;">
+            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px;">
             <h1 data-i18n="results_title"
                 style="font-family: 'Teko', sans-serif; font-size: 4rem; color: #d32f2f; margin: 0; line-height: 1;">
                 RESULTADOS</h1>
@@ -28,7 +28,23 @@
             </a>
         </header>
 
-        <section class="players-container">
+        <!-- Lobby Summary Bar -->
+        <div class="lobby-toolbar" id="lobby-toolbar">
+            <div class="lobby-counters">
+                <span class="counter-pill pill-total">Total: <span id="count-total">0</span></span>
+                <span class="counter-pill pill-banned">🔴 <span data-i18n="counter_banned">Baneados</span>: <span id="count-banned">0</span></span>
+                <span class="counter-pill pill-warning">🟡 <span data-i18n="counter_leavers">Leavers</span>: <span id="count-warning">0</span></span>
+                <span class="counter-pill pill-smurf">🔗 <span data-i18n="counter_smurfs">Smurfs</span>: <span id="count-smurfs">0</span></span>
+                <span class="counter-pill pill-clean">🟢 <span data-i18n="counter_clean">Limpios</span>: <span id="count-clean">0</span></span>
+            </div>
+            <div class="toolbar-actions">
+                <button type="button" class="btn-tool" id="btn-toggle-autobans" data-i18n="toggle_autobans">Ocultar AutoBans Expirados</button>
+                <button type="button" class="btn-tool" id="btn-copy-l4d2" data-i18n="copy_l4d2">📋 Copiar para Chat L4D2</button>
+                <button type="button" class="btn-tool" id="btn-copy-discord" data-i18n="copy_discord">📋 Copiar para Discord</button>
+            </div>
+        </div>
+
+        <section class="players-container" id="players-container">
             {% for player in data %}
             <div class="player-section {% if player.is_smurf %}smurf-account{% endif %}">
                 <header class="player-header">
@@ -119,7 +135,7 @@
                             <h4 data-i18n="infraction_history">Historial de Infracciones</h4>
                             <ul>
                                 {% for record in item.history %}
-                                <li>{{ record }}</li>
+                                <li {% if '[AUTOBAN-EXPIRED]' in record %}class="autoban-entry"{% endif %}>{{ record }}</li>
                                 {% endfor %}
                             </ul>
                         </div>
@@ -142,6 +158,8 @@
     </div>
 
     <script>
+        const scannedPlayers = {{ data | tojson }};
+
         const I18N = {
             es: {
                 results_title: "RESULTADOS",
@@ -159,7 +177,15 @@
                 status_autoban: "HISTORIAL LEAVER",
                 private_profile: "🔒 Perfil Privado",
                 hidden_hours: "🔒 Horas ocultas",
-                aliases_label: "Nicks recientes:"
+                aliases_label: "Nicks recientes:",
+                counter_banned: "Baneados",
+                counter_leavers: "Leavers",
+                counter_smurfs: "Smurfs",
+                counter_clean: "Limpios",
+                toggle_autobans_hide: "Ocultar AutoBans Expirados",
+                toggle_autobans_show: "Mostrar AutoBans Expirados",
+                copy_l4d2: "📋 Copiar para Chat L4D2",
+                copy_discord: "📋 Copiar para Discord"
             },
             en: {
                 results_title: "RESULTS",
@@ -177,9 +203,20 @@
                 status_autoban: "LEAVER HISTORY",
                 private_profile: "🔒 Private Profile",
                 hidden_hours: "🔒 Hours hidden",
-                aliases_label: "Recent aliases:"
+                aliases_label: "Recent aliases:",
+                counter_banned: "Banned",
+                counter_leavers: "Leavers",
+                counter_smurfs: "Smurfs",
+                counter_clean: "Clean",
+                toggle_autobans_hide: "Hide Expired AutoBans",
+                toggle_autobans_show: "Show Expired AutoBans",
+                copy_l4d2: "📋 Copy for L4D2 Chat",
+                copy_discord: "📋 Copy for Discord"
             }
         };
+
+        let currentLang = 'es';
+        let hideAutobansActive = false;
 
         function copyToClipboard(text, btnEl) {
             if (!text) return;
@@ -237,8 +274,114 @@
             return status;
         }
 
+        function updateLobbyCounters(players) {
+            if (!players) players = [];
+            const total = players.length;
+            let banned = 0;
+            let warning = 0;
+            let smurfs = 0;
+            let clean = 0;
+
+            players.forEach(p => {
+                if (p.is_smurf) smurfs++;
+                let hasBan = false;
+                let hasWarning = false;
+                (p.results || []).forEach(r => {
+                    const st = (r.status || '').toLowerCase();
+                    if (st.includes('bann') || st === 'found records') {
+                        hasBan = true;
+                    } else if (st.includes('autoban')) {
+                        hasWarning = true;
+                    }
+                });
+
+                if (hasBan) {
+                    banned++;
+                } else if (hasWarning) {
+                    warning++;
+                } else {
+                    clean++;
+                }
+            });
+
+            const elTotal = document.getElementById('count-total');
+            const elBanned = document.getElementById('count-banned');
+            const elWarning = document.getElementById('count-warning');
+            const elSmurfs = document.getElementById('count-smurfs');
+            const elClean = document.getElementById('count-clean');
+
+            if (elTotal) elTotal.innerText = total;
+            if (elBanned) elBanned.innerText = banned;
+            if (elWarning) elWarning.innerText = warning;
+            if (elSmurfs) elSmurfs.innerText = smurfs;
+            if (elClean) elClean.innerText = clean;
+        }
+
+        function generateL4D2Report(players) {
+            if (!players || players.length === 0) return "say [Left4Ban] No players scanned.";
+            let bannedNames = [];
+            let leaverNames = [];
+            let cleanCount = 0;
+            players.forEach(p => {
+                const pName = p.player_name || p.steam_id;
+                let banSrc = [];
+                let isLeaver = false;
+                (p.results || []).forEach(r => {
+                    const st = (r.status || '').toLowerCase();
+                    if (st.includes('bann') || st === 'found records') {
+                        banSrc.push(r.source);
+                    } else if (st.includes('autoban')) {
+                        isLeaver = true;
+                    }
+                });
+                if (banSrc.length > 0) {
+                    bannedNames.push(`${pName} (${banSrc.join('+')})`);
+                } else if (isLeaver) {
+                    leaverNames.push(pName);
+                } else {
+                    cleanCount++;
+                }
+            });
+
+            let parts = [`[Left4Ban] Lobby (${players.length}p):`];
+            if (bannedNames.length > 0) {
+                parts.push(`🔴 ${bannedNames.length} BANNED: ${bannedNames.join(', ')}`);
+            }
+            if (leaverNames.length > 0) {
+                parts.push(`🟡 ${leaverNames.length} Leavers: ${leaverNames.join(', ')}`);
+            }
+            parts.push(`🟢 ${cleanCount} Clean`);
+            return `say ${parts.join(' | ')}`;
+        }
+
+        function generateDiscordReport(players) {
+            if (!players || players.length === 0) return "**[Left4Ban Report]** No players scanned.";
+            let lines = [`**🛡️ Left 4 Ban — Lobby Report (${players.length} players)**\n`];
+            players.forEach(p => {
+                const name = p.player_name || 'Unknown';
+                const id64 = p.steam_id;
+                const smurfInfo = p.is_smurf ? ` *(Smurf linked to ${p.smurf_of_name || p.smurf_of})*` : '';
+                let statusLine = '🟢 Clean';
+                let banDetails = [];
+                (p.results || []).forEach(r => {
+                    const st = (r.status || '').toLowerCase();
+                    if (st.includes('bann') || st === 'found records') {
+                        banDetails.push(`🔴 **${r.source}**: ${r.details || r.status}`);
+                    } else if (st.includes('autoban')) {
+                        banDetails.push(`🟡 **${r.source}**: Expired AutoBan`);
+                    }
+                });
+                if (banDetails.length > 0) {
+                    statusLine = banDetails.join(' | ');
+                }
+                lines.push(`• **${name}** (\`${id64}\`)${smurfInfo}\n  └ ${statusLine}`);
+            });
+            return lines.join('\n');
+        }
+
         function setLanguage(lang) {
             if (!I18N[lang]) lang = 'es';
+            currentLang = lang;
             localStorage.setItem('l4b_lang', lang);
             document.documentElement.lang = lang;
 
@@ -248,7 +391,9 @@
 
             document.querySelectorAll('[data-i18n]').forEach(el => {
                 const key = el.getAttribute('data-i18n');
-                if (I18N[lang] && I18N[lang][key]) {
+                if (key === 'toggle_autobans') {
+                    el.innerHTML = hideAutobansActive ? I18N[lang].toggle_autobans_show : I18N[lang].toggle_autobans_hide;
+                } else if (I18N[lang] && I18N[lang][key]) {
                     el.innerHTML = I18N[lang][key];
                 }
             });
@@ -307,6 +452,39 @@
                     setLanguage(btn.getAttribute('data-lang'));
                 });
             });
+
+            // Update live counters
+            updateLobbyCounters(scannedPlayers);
+
+            // Toolbar action listeners
+            const btnToggleAutobans = document.getElementById('btn-toggle-autobans');
+            const playersContainer = document.getElementById('players-container');
+            if (btnToggleAutobans && playersContainer) {
+                btnToggleAutobans.addEventListener('click', () => {
+                    hideAutobansActive = !hideAutobansActive;
+                    playersContainer.classList.toggle('hide-autobans', hideAutobansActive);
+                    btnToggleAutobans.classList.toggle('active', hideAutobansActive);
+                    btnToggleAutobans.innerText = hideAutobansActive
+                        ? I18N[currentLang].toggle_autobans_show
+                        : I18N[currentLang].toggle_autobans_hide;
+                });
+            }
+
+            const btnCopyL4D2 = document.getElementById('btn-copy-l4d2');
+            if (btnCopyL4D2) {
+                btnCopyL4D2.addEventListener('click', () => {
+                    const text = generateL4D2Report(scannedPlayers);
+                    copyToClipboard(text, btnCopyL4D2);
+                });
+            }
+
+            const btnCopyDiscord = document.getElementById('btn-copy-discord');
+            if (btnCopyDiscord) {
+                btnCopyDiscord.addEventListener('click', () => {
+                    const text = generateDiscordReport(scannedPlayers);
+                    copyToClipboard(text, btnCopyDiscord);
+                });
+            }
         });
     </script>
 </body>

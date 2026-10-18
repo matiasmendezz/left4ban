@@ -209,6 +209,10 @@ input[type="text"]:focus, textarea#steam-input:focus {
     border-left: 5px solid var(--accent-green);
 }
 
+.card.warning {
+    border-left: 5px solid #f59e0b;
+}
+
 .card h3 {
     font-family: var(--font-head);
     font-size: 1.8rem;
@@ -233,6 +237,12 @@ input[type="text"]:focus, textarea#steam-input:focus {
 .card.clean .status-badge {
     background: #003300;
     color: #ccffcc;
+}
+
+.card.warning .status-badge {
+    background: #452700;
+    color: #fde68a;
+    border: 1px solid #f59e0b;
 }
 
 .history-log {
@@ -369,4 +379,69 @@ input[type="text"]:focus, textarea#steam-input:focus {
 .separator {
     color: #666;
     margin: 0 10px;
+}
+
+.header-info {
+    text-align: left;
+}
+
+.id-copy-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.btn-copy-id {
+    background: #222;
+    border: 1px solid #555;
+    color: #ccc;
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    transition: all 0.2s ease;
+}
+
+.btn-copy-id:hover {
+    background: #333;
+    color: #fff;
+    border-color: #777;
+}
+
+.player-meta-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.meta-badge {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    background: #222;
+    border: 1px solid #444;
+    color: #ddd;
+}
+
+.meta-badge.meta-private {
+    background: #4a1515;
+    border-color: #d32f2f;
+    color: #ffb4b4;
+}
+
+.meta-badge.meta-hours {
+    background: #102a43;
+    border-color: #3498db;
+    color: #bae6fd;
+}
+
+.player-aliases {
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: #aaa;
+    text-align: left;
 }

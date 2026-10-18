@@ -106,7 +106,11 @@
                 manual_check: "VERIFICAR MANUALMENTE &nearr;",
                 status_clean: "LIMPIO",
                 status_records: "CON REGISTROS",
-                status_banned: "BANEADO"
+                status_banned: "BANEADO",
+                status_autoban: "HISTORIAL LEAVER",
+                private_profile: "🔒 Perfil Privado",
+                hidden_hours: "🔒 Horas ocultas",
+                aliases_label: "Nicks recientes:"
             },
             en: {
                 subtitle: "Multi-Source Ban Checker",
@@ -132,15 +136,60 @@
                 manual_check: "CHECK MANUALLY &nearr;",
                 status_clean: "CLEAN",
                 status_records: "RECORDS FOUND",
-                status_banned: "BANNED"
+                status_banned: "BANNED",
+                status_autoban: "LEAVER HISTORY",
+                private_profile: "🔒 Private Profile",
+                hidden_hours: "🔒 Hours hidden",
+                aliases_label: "Recent aliases:"
             }
         };
 
         let currentLang = 'es';
 
+        function copyToClipboard(text, btnEl) {
+            if (!text) return;
+            const originalText = btnEl ? btnEl.innerText : "";
+            const showSuccess = () => {
+                if (btnEl) {
+                    btnEl.innerText = "✔";
+                    setTimeout(() => {
+                        btnEl.innerText = originalText;
+                    }, 1500);
+                }
+            };
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(showSuccess).catch(err => {
+                    console.error("Clipboard API error:", err);
+                    fallbackCopy(text, showSuccess);
+                });
+            } else {
+                fallbackCopy(text, showSuccess);
+            }
+        }
+
+        function fallbackCopy(text, cb) {
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand("copy");
+                if (cb) cb();
+            } catch (e) {
+                console.error("Fallback copy failed", e);
+            }
+            document.body.removeChild(ta);
+        }
+
         function formatStatus(status, lang) {
             if (!status) return '';
             const s = status.toLowerCase();
+            if (s.includes('autoban')) {
+                return I18N[lang].status_autoban;
+            }
             if (s.includes('clean')) {
                 return I18N[lang].status_clean;
             }
@@ -264,8 +313,13 @@
 
             let cardsHtml = '';
             for (const item of (player.results || [])) {
-                const isClean = item.status && (item.status.toLowerCase() === 'clean' || item.status.toLowerCase() === 'clean (api checked)');
-                const cardClass = isClean ? 'clean' : 'banned';
+                const stLower = (item.status || '').toLowerCase();
+                let cardClass = 'banned';
+                if (stLower === 'clean' || stLower === 'clean (api checked)') {
+                    cardClass = 'clean';
+                } else if (stLower.includes('autoban')) {
+                    cardClass = 'warning';
+                }
                 const displayStatus = formatStatus(item.status, currentLang);
 
                 let detailsHtml = '';
@@ -303,17 +357,58 @@
                 `;
             }
 
+            const steamId2Html = player.steam_id2 ? `
+                <span style="color: rgba(255,255,255,0.6); font-family: 'Roboto Mono', monospace; font-size: 0.85em;">
+                    STEAM2: <span class="highlight">${escapeHtml(player.steam_id2)}</span>
+                    <button type="button" class="btn-copy-id" onclick="copyToClipboard('${escapeHtml(player.steam_id2)}', this)">📋</button>
+                </span>
+            ` : '';
+
+            const idRowHtml = `
+                <div class="id-copy-row">
+                    <span style="color: rgba(255,255,255,0.6); font-family: 'Roboto Mono', monospace; font-size: 0.85em;">
+                        ID64: <span class="highlight">${escapeHtml(player.steam_id)}</span>
+                        <button type="button" class="btn-copy-id" onclick="copyToClipboard('${escapeHtml(player.steam_id)}', this)">📋</button>
+                    </span>
+                    ${steamId2Html}
+                </div>
+            `;
+
+            let metaBadgesHtml = '';
+            if (player.privacy_state && player.privacy_state !== 'public') {
+                metaBadgesHtml += `<span class="meta-badge meta-private" data-i18n="private_profile">${I18N[currentLang].private_profile}</span>`;
+            }
+            if (player.l4d2_hours) {
+                metaBadgesHtml += `<span class="meta-badge meta-hours">🎮 ${escapeHtml(player.l4d2_hours)}h L4D2</span>`;
+            } else if (player.privacy_state === 'public') {
+                metaBadgesHtml += `<span class="meta-badge" data-i18n="hidden_hours">${I18N[currentLang].hidden_hours}</span>`;
+            }
+            if (player.member_since) {
+                metaBadgesHtml += `<span class="meta-badge meta-age">📅 ${escapeHtml(player.member_since)}</span>`;
+            }
+            const metaRowHtml = metaBadgesHtml ? `<div class="player-meta-badges">${metaBadgesHtml}</div>` : '';
+
+            let aliasesHtml = '';
+            if (player.aliases && player.aliases.length > 0) {
+                aliasesHtml = `
+                    <div class="player-aliases">
+                        <strong data-i18n="aliases_label">${I18N[currentLang].aliases_label}</strong>
+                        <span>${player.aliases.map(a => escapeHtml(a)).join(', ')}</span>
+                    </div>
+                `;
+            }
+
             section.innerHTML = `
                 <header class="player-header">
                     <div class="header-info">
                         ${smurfBadgeHtml}
-                        <div class="player-identity" style="display: flex; align-items: center; gap: 15px;">
+                        <div class="player-identity" style="display: flex; align-items: flex-start; gap: 15px;">
                             ${avatarHtml}
                             <div>
                                 ${playerNameHtml}
-                                <span style="color: rgba(255,255,255,0.6); font-family: 'Roboto Mono', monospace; font-size: 0.9em;">
-                                    ID: <span class="highlight">${escapeHtml(player.steam_id)}</span>
-                                </span>
+                                ${idRowHtml}
+                                ${metaRowHtml}
+                                ${aliasesHtml}
                             </div>
                         </div>
                     </div>

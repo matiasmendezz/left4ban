@@ -40,10 +40,10 @@
                         {% endif %}
 
                         <!-- Avatar Display -->
-                        <div class="player-identity" style="display: flex; align-items: center; gap: 15px;">
+                        <div class="player-identity" style="display: flex; align-items: flex-start; gap: 15px;">
                             {% if player.avatar %}
                             <img src="{{ player.avatar }}" alt="Avatar"
-                                style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid #fff;">
+                                style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid #fff; margin-top: 5px;">
                             {% endif %}
 
                             <div>
@@ -52,10 +52,40 @@
                                     <span class="player-name">{{ player.player_name }}</span>
                                     {% endif %}
                                 </h2>
-                                <span
-                                    style="color: rgba(255,255,255,0.6); font-family: 'Roboto Mono', monospace; font-size: 0.9em;">
-                                    ID: <span class="highlight">{{ player.steam_id }}</span>
-                                </span>
+
+                                <div class="id-copy-row">
+                                    <span style="color: rgba(255,255,255,0.6); font-family: 'Roboto Mono', monospace; font-size: 0.85em;">
+                                        ID64: <span class="highlight">{{ player.steam_id }}</span>
+                                        <button type="button" class="btn-copy-id" onclick="copyToClipboard('{{ player.steam_id }}', this)">📋</button>
+                                    </span>
+                                    {% if player.steam_id2 %}
+                                    <span style="color: rgba(255,255,255,0.6); font-family: 'Roboto Mono', monospace; font-size: 0.85em;">
+                                        STEAM2: <span class="highlight">{{ player.steam_id2 }}</span>
+                                        <button type="button" class="btn-copy-id" onclick="copyToClipboard('{{ player.steam_id2 }}', this)">📋</button>
+                                    </span>
+                                    {% endif %}
+                                </div>
+
+                                <div class="player-meta-badges">
+                                    {% if player.privacy_state and player.privacy_state != 'public' %}
+                                    <span class="meta-badge meta-private" data-i18n="private_profile">🔒 Perfil Privado</span>
+                                    {% endif %}
+                                    {% if player.l4d2_hours %}
+                                    <span class="meta-badge meta-hours">🎮 {{ player.l4d2_hours }}h L4D2</span>
+                                    {% elif player.privacy_state == 'public' %}
+                                    <span class="meta-badge" data-i18n="hidden_hours">🔒 Horas ocultas</span>
+                                    {% endif %}
+                                    {% if player.member_since %}
+                                    <span class="meta-badge meta-age">📅 {{ player.member_since }}</span>
+                                    {% endif %}
+                                </div>
+
+                                {% if player.aliases and player.aliases|length > 0 %}
+                                <div class="player-aliases">
+                                    <strong data-i18n="aliases_label">Nicks recientes:</strong>
+                                    <span>{{ player.aliases|join(', ') }}</span>
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -67,8 +97,9 @@
 
                 <div class="summary-grid">
                     {% for item in player.results %}
+                    {% set st_lower = item.status|lower %}
                     <div
-                        class="card {% if item.status|lower == 'clean' or item.status|lower == 'clean (api checked)' %}clean{% else %}banned{% endif %}">
+                        class="card {% if st_lower == 'clean' or st_lower == 'clean (api checked)' %}clean{% elif 'autoban' in st_lower %}warning{% else %}banned{% endif %}">
                         <h3>{{ item.source }}</h3>
                         <div class="status-badge" data-i18n-status data-original-status="{{ item.status }}">{{ item.status }}</div>
                         <p class="details" data-i18n-details
@@ -124,7 +155,11 @@
                 manual_check: "VERIFICAR MANUALMENTE &nearr;",
                 status_clean: "LIMPIO",
                 status_records: "CON REGISTROS",
-                status_banned: "BANEADO"
+                status_banned: "BANEADO",
+                status_autoban: "HISTORIAL LEAVER",
+                private_profile: "🔒 Perfil Privado",
+                hidden_hours: "🔒 Horas ocultas",
+                aliases_label: "Nicks recientes:"
             },
             en: {
                 results_title: "RESULTS",
@@ -138,13 +173,58 @@
                 manual_check: "CHECK MANUALLY &nearr;",
                 status_clean: "CLEAN",
                 status_records: "RECORDS FOUND",
-                status_banned: "BANNED"
+                status_banned: "BANNED",
+                status_autoban: "LEAVER HISTORY",
+                private_profile: "🔒 Private Profile",
+                hidden_hours: "🔒 Hours hidden",
+                aliases_label: "Recent aliases:"
             }
         };
+
+        function copyToClipboard(text, btnEl) {
+            if (!text) return;
+            const originalText = btnEl ? btnEl.innerText : "";
+            const showSuccess = () => {
+                if (btnEl) {
+                    btnEl.innerText = "✔";
+                    setTimeout(() => {
+                        btnEl.innerText = originalText;
+                    }, 1500);
+                }
+            };
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(showSuccess).catch(err => {
+                    console.error("Clipboard API error:", err);
+                    fallbackCopy(text, showSuccess);
+                });
+            } else {
+                fallbackCopy(text, showSuccess);
+            }
+        }
+
+        function fallbackCopy(text, cb) {
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand("copy");
+                if (cb) cb();
+            } catch (e) {
+                console.error("Fallback copy failed", e);
+            }
+            document.body.removeChild(ta);
+        }
 
         function formatStatus(status, lang) {
             if (!status) return '';
             const s = status.toLowerCase();
+            if (s.includes('autoban')) {
+                return I18N[lang].status_autoban;
+            }
             if (s.includes('clean')) {
                 return I18N[lang].status_clean;
             }

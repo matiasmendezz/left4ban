@@ -22,12 +22,11 @@
 - **Metadatos Detallados de Steam:**
   - Resolución inteligente de formatos: SteamID64, SteamID2 (`STEAM_1:X:Y`), SteamID3 (`[U:1:X]`) y URLs vanity personalizadas.
   - Estimación de antigüedad de cuenta calculada a partir del SteamID2.
-  - Horas totales jugadas en Left 4 Dead 2 e indicador de perfil privado/horas ocultas.
+  - Horas totales jugadas en Left 4 Dead 2 e indicador de perfil privado.
   - Historial de nombres/alias recientes.
   - Detección de cuentas secundarias (*smurfs*).
   - Botón de copiado rápido de SteamID2 al portapapeles.
-- **Barra de Resumen de Lobby y Herramientas:**
-  - Contadores en vivo: Total de jugadores, Baneados, Leavers (Autobans), Smurfs y Limpios.
+- **Barra de Acciones de Lobby y Reportes:**
   - Filtro para ocultar/mostrar autobans expirados.
   - Exportación con un clic para el chat de L4D2 (`say ...`) respetando los límites de caracteres del juego.
   - Exportación formateada para canales de Discord.
@@ -110,12 +109,11 @@ El archivo resultante se generará en la carpeta `dist/` (`Left4Ban.exe` en Wind
 - **Enriched Steam Player Metadata:**
   - Versatile identifier parsing: SteamID64, SteamID2 (`STEAM_1:X:Y`), SteamID3 (`[U:1:X]`), and custom vanity URLs.
   - Account age estimation calculated from SteamID2 sequence.
-  - Total hours logged in Left 4 Dead 2 plus indicators for private profiles and hidden game hours.
+  - Total hours logged in Left 4 Dead 2 plus indicators for private profiles.
   - Recent Steam vanity aliases.
   - Smurf account detection linked to primary profiles.
   - Instant SteamID2 clipboard copy button.
-- **Lobby Summary Bar & Productivity Tools:**
-  - Live summary pills: Total players, Banned, Leavers (Autobans), Smurfs, and Clean.
+- **Lobby Action Bar & Report Export Tools:**
   - Interactive toggle to hide or display expired autobans.
   - One-click copy for in-game L4D2 chat (`say ...`) optimized for in-game character limits.
   - One-click Discord markdown lobby report generator.

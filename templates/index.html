@@ -61,15 +61,8 @@
             </ul>
         </div>
 
-        <!-- Lobby Summary Bar (Hidden initially until first result) -->
+        <!-- Lobby Action Toolbar (Hidden initially until first result) -->
         <div class="lobby-toolbar" id="lobby-toolbar" style="display: none;">
-            <div class="lobby-counters">
-                <span class="counter-pill pill-total">Total: <span id="count-total">0</span></span>
-                <span class="counter-pill pill-banned">🔴 <span data-i18n="counter_banned">Baneados</span>: <span id="count-banned">0</span></span>
-                <span class="counter-pill pill-warning">🟡 <span data-i18n="counter_leavers">Leavers</span>: <span id="count-warning">0</span></span>
-                <span class="counter-pill pill-smurf">🔗 <span data-i18n="counter_smurfs">Smurfs</span>: <span id="count-smurfs">0</span></span>
-                <span class="counter-pill pill-clean">🟢 <span data-i18n="counter_clean">Limpios</span>: <span id="count-clean">0</span></span>
-            </div>
             <div class="toolbar-actions">
                 <button type="button" class="btn-tool" id="btn-toggle-autobans" data-i18n="toggle_autobans">Ocultar AutoBans Expirados</button>
                 <button type="button" class="btn-tool" id="btn-copy-l4d2" data-i18n="copy_l4d2">📋 Copiar para Chat L4D2</button>
@@ -125,12 +118,7 @@
                 status_banned: "BANEADO",
                 status_autoban: "HISTORIAL LEAVER",
                 private_profile: "🔒 Perfil Privado",
-                hidden_hours: "🔒 Horas ocultas",
                 aliases_label: "Nicks recientes:",
-                counter_banned: "Baneados",
-                counter_leavers: "Leavers",
-                counter_smurfs: "Smurfs",
-                counter_clean: "Limpios",
                 toggle_autobans_hide: "Ocultar AutoBans Expirados",
                 toggle_autobans_show: "Mostrar AutoBans Expirados",
                 copy_l4d2: "📋 Copiar para Chat L4D2",
@@ -163,12 +151,7 @@
                 status_banned: "BANNED",
                 status_autoban: "LEAVER HISTORY",
                 private_profile: "🔒 Private Profile",
-                hidden_hours: "🔒 Hours hidden",
                 aliases_label: "Recent aliases:",
-                counter_banned: "Banned",
-                counter_leavers: "Leavers",
-                counter_smurfs: "Smurfs",
-                counter_clean: "Clean",
                 toggle_autobans_hide: "Hide Expired AutoBans",
                 toggle_autobans_show: "Show Expired AutoBans",
                 copy_l4d2: "📋 Copy for L4D2 Chat",
@@ -234,49 +217,6 @@
                 return I18N[lang].status_records;
             }
             return status;
-        }
-
-        function updateLobbyCounters(players) {
-            if (!players) players = [];
-            const total = players.length;
-            let banned = 0;
-            let warning = 0;
-            let smurfs = 0;
-            let clean = 0;
-
-            players.forEach(p => {
-                if (p.is_smurf) smurfs++;
-                let hasBan = false;
-                let hasWarning = false;
-                (p.results || []).forEach(r => {
-                    const st = (r.status || '').toLowerCase();
-                    if (st.includes('bann') || st === 'found records') {
-                        hasBan = true;
-                    } else if (st.includes('autoban')) {
-                        hasWarning = true;
-                    }
-                });
-
-                if (hasBan) {
-                    banned++;
-                } else if (hasWarning) {
-                    warning++;
-                } else {
-                    clean++;
-                }
-            });
-
-            const elTotal = document.getElementById('count-total');
-            const elBanned = document.getElementById('count-banned');
-            const elWarning = document.getElementById('count-warning');
-            const elSmurfs = document.getElementById('count-smurfs');
-            const elClean = document.getElementById('count-clean');
-
-            if (elTotal) elTotal.innerText = total;
-            if (elBanned) elBanned.innerText = banned;
-            if (elWarning) elWarning.innerText = warning;
-            if (elSmurfs) elSmurfs.innerText = smurfs;
-            if (elClean) elClean.innerText = clean;
         }
 
         function generateL4D2Report(players) {
@@ -526,8 +466,6 @@
             }
             if (player.l4d2_hours) {
                 metaBadgesHtml += `<span class="meta-badge meta-hours">🎮 ${escapeHtml(player.l4d2_hours)}h L4D2</span>`;
-            } else if (player.privacy_state === 'public') {
-                metaBadgesHtml += `<span class="meta-badge" data-i18n="hidden_hours">${I18N[currentLang].hidden_hours}</span>`;
             }
             if (player.member_since) {
                 metaBadgesHtml += `<span class="meta-badge meta-age">📅 ${escapeHtml(player.member_since)}</span>`;
@@ -652,7 +590,6 @@
                     if (data.player) {
                         scannedPlayers.push(data.player);
                         if (lobbyToolbar) lobbyToolbar.style.display = 'flex';
-                        updateLobbyCounters(scannedPlayers);
 
                         if (liveResultsQueue.children.length > 0) {
                             const hr = document.createElement('hr');

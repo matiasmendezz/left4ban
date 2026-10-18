@@ -849,16 +849,23 @@ class BanChecker:
 
     def fetch_l4d2_hours(self, steam_id):
         try:
-            url = f"https://steamcommunity.com/profiles/{steam_id}/games?tab=all&xml=1"
-            resp = self.session.get(url, timeout=4)
+            url = f"https://steamcommunity.com/profiles/{steam_id}"
+            headers = {
+                "Accept-Language": "en-US,en;q=0.9",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+            resp = self.session.get(url, headers=headers, timeout=5)
             if resp.status_code == 200:
-                tree = ET.fromstring(resp.content)
-                for game in tree.findall(".//game"):
-                    appid_elem = game.find("appID")
-                    if appid_elem is not None and (appid_elem.text or "").strip() == "550":
-                        hours_elem = game.find("hoursOnRecord")
-                        if hours_elem is not None and hours_elem.text:
-                            return hours_elem.text.strip()
+                html = resp.text
+                m = re.search(r'steamcommunity\.com/app/550[\s\S]{0,600}?([\d,\.]+)\s*hrs\s+on\s+record', html, re.IGNORECASE)
+                if m:
+                    return m.group(1).replace(',', '').strip()
+                m2 = re.search(r'"appid":\s*550,[^{}]*"hours_forever":\s*"([\d,\.]+)"', html)
+                if m2:
+                    return m2.group(1).replace(',', '').strip()
+                m3 = re.search(r'data-appid="550"[\s\S]{0,400}?([\d,\.]+)\s*hrs\s+on\s+record', html, re.IGNORECASE)
+                if m3:
+                    return m3.group(1).replace(',', '').strip()
         except Exception as e:
             print(f"[!] Error fetching L4D2 hours: {e}")
         return None
@@ -895,7 +902,23 @@ class BanChecker:
                 member_since = member_elem.text.strip() if (member_elem is not None and member_elem.text) else ""
 
                 aliases = self.fetch_steam_aliases(steam_id, current_name=name)
-                l4d2_hours = self.fetch_l4d2_hours(steam_id) if privacy_state == "public" else None
+
+                # Check mostPlayedGames in the already fetched XML
+                l4d2_hours = None
+                most_played = tree.find("mostPlayedGames")
+                if most_played is not None:
+                    for mpg in most_played.findall("mostPlayedGame"):
+                        g_link = (mpg.findtext("gameLink") or "").lower()
+                        g_name = (mpg.findtext("gameName") or "").lower()
+                        if "app/550" in g_link or "550" in g_link or "left 4 dead 2" in g_name:
+                            hrs = mpg.findtext("hoursOnRecord") or mpg.findtext("hoursPlayed")
+                            if hrs:
+                                l4d2_hours = hrs.strip().replace(",", "")
+                                break
+
+                # Fallback to public profile HTML if not in mostPlayedGames
+                if not l4d2_hours and privacy_state == "public":
+                    l4d2_hours = self.fetch_l4d2_hours(steam_id)
 
                 return {
                     "name": name,

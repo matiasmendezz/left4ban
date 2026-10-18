@@ -556,6 +556,8 @@ class BanChecker:
             history = []
             found_nickname = "Unknown"
             related_ids = set()
+            has_severe_or_active_ban = False
+            has_expired_autoban = False
 
             rows = soup.find_all("tr")
             for row in rows:
@@ -575,6 +577,12 @@ class BanChecker:
                         reason = cols[4].get_text(strip=True) if len(cols) > 4 else ""
                         desc = cols[5].get_text(strip=True) if len(cols) > 5 else ""
 
+                        col3_classes = cols[3].get("class") or [] if len(cols) > 3 else []
+                        is_expired = ("ban-expired" in col3_classes) or ("ban-expired" in str(cols[3]) if len(cols) > 3 else "")
+
+                        combined_lower = f"{reason} {desc}".lower()
+                        is_autoban = any(k in combined_lower for k in ["[autoban]", "leaving midgame", "leaving game early", "automatic ban for", "failing to join", "staying inactive", "exceeding the 5 pauses"])
+
                         parts = []
                         if banned_on:
                             parts.append(f"[{banned_on}]")
@@ -585,9 +593,20 @@ class BanChecker:
                         if unban_str:
                             parts.append(f"Unban: {unban_str}")
 
-                        history.append(" | ".join(parts) if parts else row_text)
+                        ban_info = " | ".join(parts) if parts else row_text
+                        if is_autoban and is_expired:
+                            ban_info = f"[AUTOBAN-EXPIRED] {ban_info}"
+                            has_expired_autoban = True
+                        elif is_autoban and not is_expired:
+                            ban_info = f"[AUTOBAN-ACTIVE] {ban_info}"
+                            has_severe_or_active_ban = True
+                        else:
+                            has_severe_or_active_ban = True
+
+                        history.append(ban_info)
                     except Exception:
                         history.append(row_text)
+                        has_severe_or_active_ban = True
 
                     # Extract any related steam IDs in this matched row text
                     for cand in re.findall(r'7656\d{13}|STEAM_[01]:[01]:\d+|\[?U:1:\d+\]?', row_text, re.IGNORECASE):
@@ -595,9 +614,10 @@ class BanChecker:
                             related_ids.add(cand)
 
             if history:
+                status = "Expired AutoBans" if (has_expired_autoban and not has_severe_or_active_ban) else "Found Records"
                 return {
                     "source": "L4D2Center",
-                    "status": "Found Records",
+                    "status": status,
                     "history": history,
                     "manual_check_url": search_link,
                     "player_name": found_nickname,
@@ -966,6 +986,9 @@ class BanChecker:
                         if res.get("status") in ["Found Records", "Banned", "BANNED"]:
                             msg_found = f"⚠️ {s_name}: FOUND!" if is_en else f"⚠️ {s_name}: ¡ENCONTRADO!"
                             yield {"type": "progress", "msg": msg_found}
+                        elif res.get("status") == "Expired AutoBans":
+                            msg_auto = f"🟡 {s_name}: Only expired AutoBans (Leaver)" if is_en else f"🟡 {s_name}: Solo AutoBans expirados (Leaver)"
+                            yield {"type": "progress", "msg": msg_auto}
                         elif res.get("status") == "Clean":
                             msg_clean = f"{s_name}: Clean" if is_en else f"{s_name}: Limpio"
                             yield {"type": "success", "msg": msg_clean}

@@ -2,8 +2,16 @@ from flask import Flask, render_template, request, Response, stream_with_context
 from ban_checker import BanChecker, STEAM_API_KEY
 import json
 import uuid
+import sys
+import os
 
-app = Flask(__name__)
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    template_folder = os.path.join(sys._MEIPASS, 'templates')
+    static_folder = os.path.join(sys._MEIPASS, 'static')
+    app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+else:
+    app = Flask(__name__)
+
 checker = BanChecker(api_key=STEAM_API_KEY)
 
 # Simple in-memory cache for results
@@ -101,7 +109,10 @@ if __name__ == '__main__':
     import os
     import socket
     import webbrowser
+    import multiprocessing
     from threading import Timer
+
+    multiprocessing.freeze_support()
 
     port = int(os.getenv("PORT", 5000))
     while True:
@@ -117,5 +128,8 @@ if __name__ == '__main__':
             pass
 
     Timer(1.5, open_browser).start()
-    app.run(debug=False, port=port)
+    try:
+        app.run(debug=False, port=port)
+    finally:
+        checker.close_browser()
 

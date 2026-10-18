@@ -1,0 +1,86 @@
+name: Build Left4Ban Executables
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: Left4Ban-Windows
+            binary_path: dist/Left4Ban.exe
+          - os: ubuntu-latest
+            artifact_name: Left4Ban-Linux
+            binary_path: dist/Left4Ban
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build standalone executable
+        run: python build_executable.py
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.binary_path }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows executable
+        uses: actions/download-artifact@v4
+        with:
+          name: Left4Ban-Windows
+          path: release-artifacts/windows
+
+      - name: Download Linux executable
+        uses: actions/download-artifact@v4
+        with:
+          name: Left4Ban-Linux
+          path: release-artifacts/linux
+
+      - name: Package Release Assets
+        run: |
+          mkdir -p dist-release
+          mv release-artifacts/windows/Left4Ban.exe dist-release/Left4Ban.exe
+          mv release-artifacts/linux/Left4Ban dist-release/Left4Ban-Linux
+          chmod +x dist-release/Left4Ban-Linux
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-release/Left4Ban.exe
+            dist-release/Left4Ban-Linux
+          draft: false
+          prerelease: false
+          generate_release_notes: true

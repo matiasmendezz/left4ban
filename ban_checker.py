@@ -102,7 +102,7 @@ class BanChecker:
         co.set_argument('--window-position=-32000,-32000')
         co.set_argument('--start-minimized')
 
-        for candidate_path in [
+        candidate_paths = [
             '/usr/bin/brave-browser',
             '/usr/bin/brave',
             '/opt/brave.com/brave/brave',
@@ -110,8 +110,20 @@ class BanChecker:
             '/usr/bin/chromium-browser',
             '/usr/bin/google-chrome',
             '/usr/bin/google-chrome-stable',
-        ]:
-            if os.path.exists(candidate_path):
+        ]
+
+        # Windows browser paths for Chrome, Brave, and Edge
+        for env_var in ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA']:
+            base_dir = os.environ.get(env_var)
+            if base_dir:
+                candidate_paths.extend([
+                    os.path.join(base_dir, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+                    os.path.join(base_dir, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+                    os.path.join(base_dir, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+                ])
+
+        for candidate_path in candidate_paths:
+            if candidate_path and os.path.exists(candidate_path):
                 co.set_browser_path(candidate_path)
                 break
 

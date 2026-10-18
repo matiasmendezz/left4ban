@@ -3,6 +3,8 @@ import re
 import sys
 import os
 import argparse
+import time
+import copy
 from bs4 import BeautifulSoup
 from tabulate import tabulate
 import xml.etree.ElementTree as ET
@@ -33,6 +35,8 @@ class BanChecker:
     def __init__(self, api_key=None):
         self.api_key = api_key
         self._browser_page = None
+        self._player_cache = {}
+        self._cache_ttl = 300  # 5 minutes
         # Use cloudscraper with browser emulation
         self.session = cloudscraper.create_scraper(
             browser={
@@ -44,6 +48,24 @@ class BanChecker:
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         })
+
+    def _get_cached_player(self, steam_id):
+        if steam_id in self._player_cache:
+            entry = self._player_cache[steam_id]
+            if (time.time() - entry["timestamp"]) < self._cache_ttl:
+                return copy.deepcopy(entry)
+            else:
+                del self._player_cache[steam_id]
+        return None
+
+    def _set_cached_player(self, steam_id, details, bans_found, player_name, avatar):
+        self._player_cache[steam_id] = {
+            "timestamp": time.time(),
+            "details": copy.deepcopy(details),
+            "bans_found": copy.deepcopy(bans_found),
+            "player_name": player_name,
+            "avatar": avatar
+        }
 
     def _get_browser_page(self):
         """
@@ -830,64 +852,79 @@ class BanChecker:
 
                 # --- START PER-ACCOUNT PROCESSING ---
 
-                # 1. Fetch Profile Details (Avatar, Name)
-                msg_fetch = "Fetching profile details..." if is_en else f"Obteniendo datos de perfil ({current_id})..."
-                yield {"type": "progress", "msg": msg_fetch}
-                details = self.get_live_steam_details(current_id)
-                name = details.get("name", "Unknown") if details else "Unknown"
-                avatar = details.get("avatar", "") if details else ""
+                cached = self._get_cached_player(current_id)
+                if cached:
+                    details = cached["details"]
+                    name = cached["player_name"]
+                    avatar = cached["avatar"]
+                    bans_found = cached["bans_found"]
 
-                msg_analyzing = f"Analyzing: {name}" if is_en else f"Analizando a: {name}"
-                yield {"type": "info", "msg": msg_analyzing, "avatar": avatar, "name": name, "steam_id": current_id}
+                    msg_analyzing = f"Analyzing: {name}" if is_en else f"Analizando a: {name}"
+                    yield {"type": "info", "msg": msg_analyzing, "avatar": avatar, "name": name, "steam_id": current_id}
 
-                if item["is_smurf"]:
-                    smurf_origin = item["smurf_of_name"] or item["smurf_of"]
-                    msg_smurf = f"🔍 Analyzing Smurf: {name} ({current_id})..." if is_en else f"🔍 Analizando Smurf vinculado a {smurf_origin}: {name} ({current_id})..."
-                    yield {"type": "progress", "msg": msg_smurf}
+                    msg_cached = f"⚡ {name} ({current_id}): Loaded from recent cache (<5m)" if is_en else f"⚡ {name} ({current_id}): Cargado desde caché reciente (<5m)"
+                    yield {"type": "success", "msg": msg_cached}
                 else:
-                    msg_main = f"Analyzing main account: {current_id}..." if is_en else f"Analizando jugador: {name} ({current_id})..."
-                    yield {"type": "progress", "msg": msg_main}
+                    # 1. Fetch Profile Details (Avatar, Name)
+                    msg_fetch = "Fetching profile details..." if is_en else f"Obteniendo datos de perfil ({current_id})..."
+                    yield {"type": "progress", "msg": msg_fetch}
+                    details = self.get_live_steam_details(current_id)
+                    name = details.get("name", "Unknown") if details else "Unknown"
+                    avatar = details.get("avatar", "") if details else ""
 
-                bans_found = []
+                    msg_analyzing = f"Analyzing: {name}" if is_en else f"Analizando a: {name}"
+                    yield {"type": "info", "msg": msg_analyzing, "avatar": avatar, "name": name, "steam_id": current_id}
 
-                for source in SOURCES:
-                    s_name = source["name"]
-                    msg_check = f"Checking {s_name}..." if is_en else f"Consultando {s_name}..."
-                    yield {"type": "progress", "msg": msg_check}
-
-                    res = {}
-                    try:
-                        if source["type"] == "l4d2center_api":
-                            res = self.check_l4d2center(source["url"], current_id)
-                        elif source["type"] == "cedapug_scrape":
-                            res = self.check_cedapug(source["url"], current_id)
-                        elif source["type"] == "custom_sirplease":
-                            res = self.check_sirplease_custom(source["url"], current_id)
-                        else:
-                            res = {"source": s_name, "status": "Unknown", "history": []}
-                    except Exception as e:
-                        res = {"source": s_name, "status": "Error", "history": [str(e)]}
-
-                    if res.get("status") in ["Found Records", "Banned", "BANNED"]:
-                        msg_found = f"⚠️ {s_name}: FOUND!" if is_en else f"⚠️ {s_name}: ¡ENCONTRADO!"
-                        yield {"type": "progress", "msg": msg_found}
-                    elif res.get("status") == "Clean":
-                        msg_clean = f"{s_name}: Clean" if is_en else f"{s_name}: Limpio"
-                        yield {"type": "success", "msg": msg_clean}
+                    if item["is_smurf"]:
+                        smurf_origin = item["smurf_of_name"] or item["smurf_of"]
+                        msg_smurf = f"🔍 Analyzing Smurf: {name} ({current_id})..." if is_en else f"🔍 Analizando Smurf vinculado a {smurf_origin}: {name} ({current_id})..."
+                        yield {"type": "progress", "msg": msg_smurf}
                     else:
-                        err_detail = res.get("error") or res.get("status") or "Error"
-                        msg_err = f"⚠️ {s_name}: {err_detail}"
-                        yield {"type": "progress", "msg": msg_err}
+                        msg_main = f"Analyzing main account: {current_id}..." if is_en else f"Analizando jugador: {name} ({current_id})..."
+                        yield {"type": "progress", "msg": msg_main}
 
-                    bans_found.append(res)
+                    bans_found = []
 
-                # Fallback for player name if Steam profile was private/unknown
-                if name in ["Unknown", "[Privado/Error]", None, ""]:
-                    for b in bans_found:
-                        p_name = b.get("player_name")
-                        if p_name and p_name not in ["Unknown", "[Privado/Error]", ""]:
-                            name = p_name
-                            break
+                    for source in SOURCES:
+                        s_name = source["name"]
+                        msg_check = f"Checking {s_name}..." if is_en else f"Consultando {s_name}..."
+                        yield {"type": "progress", "msg": msg_check}
+
+                        res = {}
+                        try:
+                            if source["type"] == "l4d2center_api":
+                                res = self.check_l4d2center(source["url"], current_id)
+                            elif source["type"] == "cedapug_scrape":
+                                res = self.check_cedapug(source["url"], current_id)
+                            elif source["type"] == "custom_sirplease":
+                                res = self.check_sirplease_custom(source["url"], current_id)
+                            else:
+                                res = {"source": s_name, "status": "Unknown", "history": []}
+                        except Exception as e:
+                            res = {"source": s_name, "status": "Error", "history": [str(e)]}
+
+                        if res.get("status") in ["Found Records", "Banned", "BANNED"]:
+                            msg_found = f"⚠️ {s_name}: FOUND!" if is_en else f"⚠️ {s_name}: ¡ENCONTRADO!"
+                            yield {"type": "progress", "msg": msg_found}
+                        elif res.get("status") == "Clean":
+                            msg_clean = f"{s_name}: Clean" if is_en else f"{s_name}: Limpio"
+                            yield {"type": "success", "msg": msg_clean}
+                        else:
+                            err_detail = res.get("error") or res.get("status") or "Error"
+                            msg_err = f"⚠️ {s_name}: {err_detail}"
+                            yield {"type": "progress", "msg": msg_err}
+
+                        bans_found.append(res)
+
+                    # Fallback for player name if Steam profile was private/unknown
+                    if name in ["Unknown", "[Privado/Error]", None, ""]:
+                        for b in bans_found:
+                            p_name = b.get("player_name")
+                            if p_name and p_name not in ["Unknown", "[Privado/Error]", ""]:
+                                name = p_name
+                                break
+
+                    self._set_cached_player(current_id, details, bans_found, name, avatar)
 
                 # Smurf detection & queueing
                 detected_ids = self._extract_related_ids(bans_found, current_id=current_id)

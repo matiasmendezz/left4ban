@@ -12,11 +12,6 @@ import cloudscraper
 STEAM_API_KEY = os.getenv("STEAM_API_KEY", "") # User can set this env var or input it
 SOURCES = [
     {
-        "name": "Steam Official",
-        "url": "https://steamcommunity.com/profiles/",
-        "type": "steam_official"
-    },
-    {
         "name": "SirPlease",
         "url": "https://sirplease.net/api/bans",
         "type": "custom_sirplease"
@@ -236,45 +231,6 @@ class BanChecker:
             print(f"Excepción al resolver vanity: {e}")
             return None
 
-    def check_steam_api(self, steam_id):
-        """
-        Checks official VAC/Game bans using Steam Web API.
-        """
-        if not self.api_key:
-            return {"source": "Steam API", "error": "Falta API Key"}
-            
-        url = "http://api.steampowered.com/ISteamUser/GetPlayerBans/v1/"
-        params = {"key": self.api_key, "steamids": steam_id}
-        
-        try:
-            resp = self.session.get(url, params=params, timeout=10)
-            data = resp.json()
-            players = data.get("players", [])
-            if not players:
-                return {"source": "Steam API", "error": "No data"}
-                
-            p = players[0]
-            vac_banned = p.get("VACBanned", False)
-            game_bans = p.get("NumberOfGameBans", 0)
-            days_since = p.get("DaysSinceLastBan", 0)
-            eco_ban = p.get("EconomyBan", "None")
-            
-            result_str = "Limpio"
-            if vac_banned or game_bans > 0:
-                result_str = f"VAC: {vac_banned}, Game Bans: {game_bans}, Days Since: {days_since}"
-            
-            if eco_ban != "None":
-                result_str += f", Eco: {eco_ban}"
-
-            return {
-                "source": "Steam Official",
-                "status": "BANNED" if (vac_banned or game_bans > 0) else "Clean",
-                "details": result_str,
-                "history": [] # Steam API doesn't give history details, just totals
-            }
-        except Exception as e:
-            return {"source": "Steam Official", "error": str(e)}
-
     def steam64_to_id2(self, steam_id64):
         """
         Converts SteamID64 to SteamID2 (STEAM_1:X:Y).
@@ -321,65 +277,6 @@ class BanChecker:
             w = int(m.group(1))
             return str(76561197960265728 + w)
         return None
-
-    def check_steam_official(self, steam_id):
-        """
-        Checks official Steam VAC and Trade bans.
-        Uses Steam API if key is available, falls back to XML community profile.
-        """
-        if self.api_key:
-            res = self.check_steam_api(steam_id)
-            if not res.get("error"):
-                res.setdefault("manual_check_url", f"https://steamcommunity.com/profiles/{steam_id}")
-                if res.get("status") == "BANNED" and not res.get("history") and res.get("details"):
-                    res["history"] = [res["details"]]
-                return res
-
-        url = f"https://steamcommunity.com/profiles/{steam_id}/?xml=1"
-        try:
-            resp = self.session.get(url, timeout=10)
-            if resp.status_code != 200:
-                return {
-                    "source": "Steam Official",
-                    "status": "Error",
-                    "error": f"HTTP {resp.status_code}",
-                    "details": f"HTTP Error {resp.status_code}",
-                    "history": [],
-                    "manual_check_url": f"https://steamcommunity.com/profiles/{steam_id}"
-                }
-
-            tree = ET.fromstring(resp.content)
-            vac_elem = tree.findtext("vacBanned", "").strip()
-            trade_elem = tree.findtext("tradeBanState", "").strip()
-
-            vac_banned = (vac_elem == "1")
-            trade_banned = bool(trade_elem and trade_elem.lower() != "none")
-            is_banned = vac_banned or trade_banned
-
-            bans = []
-            if vac_banned:
-                bans.append("VAC Banned")
-            if trade_banned:
-                bans.append(f"Trade Ban: {trade_elem}")
-
-            details_str = ", ".join(bans) if bans else "Limpio"
-
-            return {
-                "source": "Steam Official",
-                "status": "BANNED" if is_banned else "Clean",
-                "details": details_str,
-                "history": [details_str] if is_banned else [],
-                "manual_check_url": f"https://steamcommunity.com/profiles/{steam_id}"
-            }
-        except Exception as e:
-            return {
-                "source": "Steam Official",
-                "status": "Error",
-                "error": str(e),
-                "details": str(e),
-                "history": [],
-                "manual_check_url": f"https://steamcommunity.com/profiles/{steam_id}"
-            }
 
     def check_sirplease_custom(self, base_url, steam_id):
         """
@@ -803,9 +700,7 @@ class BanChecker:
             results_list = []
 
             for source in SOURCES:
-                if source["type"] == "steam_official":
-                    res = self.check_steam_official(steam_id)
-                elif source["type"] == "l4d2center_api" or source["name"] == "L4D2Center":
+                if source["type"] == "l4d2center_api" or source["name"] == "L4D2Center":
                     res = self.check_l4d2center(source["url"], steam_id)
                 elif source["type"] == "cedapug_scrape":
                     res = self.check_cedapug(source["url"], steam_id)
@@ -962,9 +857,7 @@ class BanChecker:
 
                     res = {}
                     try:
-                        if source["type"] == "steam_official":
-                            res = self.check_steam_official(current_id)
-                        elif source["type"] == "l4d2center_api":
+                        if source["type"] == "l4d2center_api":
                             res = self.check_l4d2center(source["url"], current_id)
                         elif source["type"] == "cedapug_scrape":
                             res = self.check_cedapug(source["url"], current_id)

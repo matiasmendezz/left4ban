@@ -179,8 +179,8 @@ input[type="text"]:focus, textarea#steam-input:focus {
 
 .summary-grid {
     display: grid;
-    /* Force 4 columns on large screens */
-    grid-template-columns: repeat(4, 1fr);
+    /* Force 3 columns on large screens */
+    grid-template-columns: repeat(3, 1fr);
     gap: 20px;
     align-items: start;
     /* Align tops */

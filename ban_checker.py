@@ -791,9 +791,49 @@ class BanChecker:
 
         return discovered
 
+    def fetch_steam_aliases(self, steam_id, current_name=None):
+        try:
+            url = f"https://steamcommunity.com/profiles/{steam_id}/ajaxaliases/"
+            resp = self.session.get(url, timeout=4)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    aliases = []
+                    seen = set()
+                    if current_name:
+                        seen.add(current_name)
+                    for item in data:
+                        if isinstance(item, dict) and "newname" in item:
+                            n = (item["newname"] or "").strip()
+                            if n and n not in seen:
+                                seen.add(n)
+                                aliases.append(n)
+                                if len(aliases) >= 6:
+                                    break
+                    return aliases
+        except Exception as e:
+            print(f"[!] Error fetching aliases: {e}")
+        return []
+
+    def fetch_l4d2_hours(self, steam_id):
+        try:
+            url = f"https://steamcommunity.com/profiles/{steam_id}/games?tab=all&xml=1"
+            resp = self.session.get(url, timeout=4)
+            if resp.status_code == 200:
+                tree = ET.fromstring(resp.content)
+                for game in tree.findall(".//game"):
+                    appid_elem = game.find("appID")
+                    if appid_elem is not None and (appid_elem.text or "").strip() == "550":
+                        hours_elem = game.find("hoursOnRecord")
+                        if hours_elem is not None and hours_elem.text:
+                            return hours_elem.text.strip()
+        except Exception as e:
+            print(f"[!] Error fetching L4D2 hours: {e}")
+        return None
+
     def get_live_steam_details(self, steam_id):
         """
-        Fetches public profile info (Name, Avatar) from Steam XML.
+        Fetches public profile info (Name, Avatar, Privacy, MemberSince, L4D2 hours, Aliases) from Steam XML & Ajax.
         Returns dict or None
         """
         try:
@@ -801,17 +841,37 @@ class BanChecker:
             resp = self.session.get(url, timeout=5)
             if resp.status_code == 200:
                 tree = ET.fromstring(resp.content)
-                name_elem = tree.find("steamID")
-                avatar_elem = tree.find("avatarFull") 
-                
-                # Check privacy or error
                 error = tree.find("error")
                 if error is not None:
-                     return {"name": "[Privado/Error]", "avatar": ""}
-                
+                    return {
+                        "name": "[Privado/Error]",
+                        "avatar": "",
+                        "privacy_state": "private",
+                        "member_since": "",
+                        "l4d2_hours": None,
+                        "aliases": []
+                    }
+
+                name_elem = tree.find("steamID")
+                avatar_elem = tree.find("avatarFull")
+                privacy_elem = tree.find("privacyState")
+                member_elem = tree.find("memberSince")
+
+                name = name_elem.text.strip() if (name_elem is not None and name_elem.text) else "Unknown"
+                avatar = avatar_elem.text.strip() if (avatar_elem is not None and avatar_elem.text) else ""
+                privacy_state = privacy_elem.text.strip().lower() if (privacy_elem is not None and privacy_elem.text) else "unknown"
+                member_since = member_elem.text.strip() if (member_elem is not None and member_elem.text) else ""
+
+                aliases = self.fetch_steam_aliases(steam_id, current_name=name)
+                l4d2_hours = self.fetch_l4d2_hours(steam_id) if privacy_state == "public" else None
+
                 return {
-                    "name": name_elem.text if name_elem is not None else "Unknown",
-                    "avatar": avatar_elem.text if avatar_elem is not None else ""
+                    "name": name,
+                    "avatar": avatar,
+                    "privacy_state": privacy_state,
+                    "member_since": member_since,
+                    "l4d2_hours": l4d2_hours,
+                    "aliases": aliases
                 }
         except Exception as e:
             print(f"[!] Error gathering steam details: {e}")
@@ -943,8 +1003,13 @@ class BanChecker:
                 # Construct player object
                 player_data = {
                     "steam_id": current_id,
+                    "steam_id2": self.steam64_to_id2(current_id),
                     "profile_url": f"https://steamcommunity.com/profiles/{current_id}",
                     "player_name": name,
+                    "privacy_state": details.get("privacy_state", "unknown") if details else "unknown",
+                    "member_since": details.get("member_since", "") if details else "",
+                    "l4d2_hours": details.get("l4d2_hours") if details else None,
+                    "aliases": details.get("aliases", []) if details else [],
                     "results": bans_found,
                     "avatar": avatar,
                     "is_smurf": item["is_smurf"],
